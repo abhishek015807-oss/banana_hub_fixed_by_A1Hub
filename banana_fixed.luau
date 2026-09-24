@@ -1846,15 +1846,12 @@ function StatusCheckLeviathan()
 	return "..."
 end
 function IsMobAlive(K)
-	if
-		K
-		and K.Parent
-		and (K:FindFirstChild("HumanoidRootPart"))
-		and (K:FindFirstChildWhichIsA("Humanoid"))
-		and K.Humanoid.Health > 0
-	then
-		return true
-	end
+	if not K or not K.Parent then return false end
+	local hum = K:FindFirstChildWhichIsA("Humanoid")
+	if hum and hum.Health > 0 then return true end
+	local health = K:FindFirstChild("Health")
+	if health and tonumber(health.Value) and health.Value > 0 then return true end
+	return false
 end
 local EliteNames = { "Deandre", "Urban", "Diablo" }
 function DetectEliteHunter()
@@ -2819,6 +2816,13 @@ getgenv().BananaNoclipConn = runService.Stepped:Connect(function()
 	pcall(function()
 		local char = (t and t.Character) or (game.Players.LocalPlayer and game.Players.LocalPlayer.Character)
 		if not char then return end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+
+		-- If the player is currently seated in a boat or vehicle seat, do NOT touch humanoid state or collisions!
+		if hum and (hum.SeatPart ~= nil or hum.Sit) then
+			return
+		end
+
 		local isNoclipActive = getgenv().noclip
 			or (TweenManager and (TweenManager.TweenRunning or TweenManager.currentTween ~= nil))
 			or (char:FindFirstChild("HumanoidRootPart") and char.HumanoidRootPart:FindFirstChild("FloatForce") ~= nil)
@@ -2832,8 +2836,7 @@ getgenv().BananaNoclipConn = runService.Stepped:Connect(function()
 					part.CanCollide = false
 				end
 			end
-			local hum = char:FindFirstChildOfClass("Humanoid")
-			if hum then
+			if hum and not (hum.SeatPart ~= nil or hum.Sit) then
 				hum:ChangeState(11) -- StrafingNoPhysics disables terrain/part collision physics
 			end
 		end
@@ -3552,6 +3555,128 @@ local function B(Z, C, J, F)
 	return r
 end
 
+function UnseatPlayer()
+	local char = t.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hum then return end
+
+	pcall(function()
+		if hum.SeatPart then
+			local seat = hum.SeatPart
+			local weld = seat:FindFirstChild("SeatWeld") or (char and char:FindFirstChild("SeatWeld", true))
+			if weld then
+				weld:Destroy()
+			end
+		end
+		for _, v in ipairs(char:GetDescendants()) do
+			if v:IsA("Weld") and v.Name == "SeatWeld" then
+				v:Destroy()
+			end
+		end
+	end)
+
+	pcall(function()
+		hum.Sit = false
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end)
+
+	if hrp and hrp:FindFirstChild("FloatForce") then
+		pcall(function() hrp.FloatForce:Destroy() end)
+	end
+
+	pcall(function()
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				part.CanCollide = true
+			end
+		end
+	end)
+end
+
+function SitInBoat(seat)
+	if not seat then return false end
+	local actualSeat = seat:IsA("VehicleSeat") and seat or seat:FindFirstChildWhichIsA("VehicleSeat") or seat:FindFirstChild("VehicleSeat")
+	if not actualSeat then
+		local b = seat:FindFirstAncestorOfClass("Model")
+		actualSeat = b and (b:FindFirstChildWhichIsA("VehicleSeat") or b:FindFirstChild("VehicleSeat"))
+	end
+	if not actualSeat then return false end
+
+	local char = t.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hum or hum.Health <= 0 or not hrp then return false end
+
+	-- Unequip tools so weapon holding animations do not break the steering wheel sit posture
+	pcall(function() hum:UnequipTools() end)
+
+	-- Ensure the seat always has collision enabled
+	pcall(function() actualSeat.CanCollide = true end)
+
+	-- If already seated in this seat, ensure clean physics and seated state
+	if hum.SeatPart == actualSeat then
+		if hrp:FindFirstChild("FloatForce") then
+			pcall(function() hrp.FloatForce:Destroy() end)
+		end
+		if TweenManager and TweenManager.currentTween then
+			TweenManager.CancelTweenOnly()
+		end
+		if hum:GetState() ~= Enum.HumanoidStateType.Seated then
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Seated) end)
+		end
+		return true
+	end
+
+	-- Cancel any ongoing character tween and clean forces
+	if TweenManager and TweenManager.currentTween then
+		TweenManager.CancelTweenOnly()
+	end
+	if hrp:FindFirstChild("FloatForce") then
+		pcall(function() hrp.FloatForce:Destroy() end)
+	end
+
+	hrp.Anchored = false
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+
+	-- Ensure character collision is enabled for proper sitting posture
+	pcall(function()
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") and (part.Name == "UpperTorso" or part.Name == "LowerTorso" or part.Name == "Torso") then
+				part.CanCollide = true
+			end
+		end
+	end)
+
+	-- Place character slightly above the seat aligned with seat orientation
+	local seatCF = actualSeat.CFrame
+	local seatYOffset = (actualSeat.Size.Y / 2) + 0.6
+	hrp.CFrame = seatCF * CFrame.new(0, seatYOffset, 0)
+
+	-- Touch-to-sit / Sit call
+	pcall(function() actualSeat:Sit(hum) end)
+	task.wait(0.08)
+
+	-- Fallback if Roblox touch event didn't trigger
+	if hum.SeatPart ~= actualSeat and hum.Health > 0 then
+		pcall(function() actualSeat:Sit(hum) end)
+		task.wait(0.04)
+	end
+
+	-- Ensure proper seated humanoid state
+	if hum.SeatPart == actualSeat then
+		pcall(function() hum:ChangeState(Enum.HumanoidStateType.Seated) end)
+	end
+
+	-- Final cleanup of any rogue forces
+	if hrp:FindFirstChild("FloatForce") then
+		pcall(function() hrp.FloatForce:Destroy() end)
+	end
+
+	return hum.SeatPart == actualSeat
+end
+
 function toTarget(P, e)
 	if typeof(P) ~= "CFrame" then
 		return
@@ -3566,20 +3691,8 @@ function toTarget(P, e)
 	end
 	k.LastCall = tick()
 	if Z and Z.Sit then
-		TweenManager.CancelCurrent()
-		task.wait(0.1)
-		getgenv().noclip = false
-		d:SendKeyEvent(true, "Space", false, game)
-		task.wait()
-		d:SendKeyEvent(false, "Space", false, game)
-		task.wait(0.1)
-		if H:FindFirstChild("EffectsSY") then
-			H.EffectsSY:Destroy()
-		end
-		Z.Jump = true
-		task.wait(0.1)
-		H.CFrame = H.CFrame * CFrame.new(0, 10, 0)
-		return
+		UnseatPlayer()
+		task.wait(0.04)
 	end
 	if not H:FindFirstChild("FloatForce") then
 		y(H)
@@ -3879,12 +3992,18 @@ spawn(function()
 	end
 end)
 function equiptool(g)
-	if g and t:FindFirstChild("Backpack") and t.Backpack:FindFirstChild(g) then
-		local char = t.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if hum and hum.Health > 0 then
-			hum:EquipTool(t.Backpack:FindFirstChild(g))
-		end
+	if not g then return end
+	local char = t.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return end
+
+	-- Never equip tools while seated in a VehicleSeat or boat seat, as tool hold animations break the steering posture
+	if hum.SeatPart and (hum.SeatPart:IsA("VehicleSeat") or hum.SeatPart:IsA("Seat")) then
+		return
+	end
+
+	if t:FindFirstChild("Backpack") and t.Backpack:FindFirstChild(g) then
+		hum:EquipTool(t.Backpack:FindFirstChild(g))
 	end
 end
 function NameWeapon(g, G)
@@ -7912,29 +8031,19 @@ function AutoQuestDojo()
 				end
 				getgenv().RoughSea = V
 				Y = CFrame.new(-32975.9921875, 10, 25963.7109375 + RoughSea)
-				if not t.Character.Humanoid.Sit then
-					toTarget(P.VehicleSeat.CFrame * CFrame.new(0, 1, 0))
-					task.wait(0.08)
-					if not t.Character.Humanoid.Sit and t.Character.Humanoid.Health > 0 then
-						pcall(function() P.VehicleSeat:Sit(t.Character.Humanoid) end)
-					end
+				if not SitInBoat(P.VehicleSeat) then
+					return
 				else
 					manageTween(P.VehicleSeat, Y, 350, "TweenBoat")
 				end
 			end
 		else
-			pcall(function()
-				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
-					t.Character.Humanoid.Sit = false
-				end
-			end)
+			UnseatPlayer()
 			repeat
 				task.wait()
-				pcall(function()
-					if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
-						t.Character.Humanoid.Sit = false
-					end
-				end)
+				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+					UnseatPlayer()
+				end
 				TeleportSeaEvents(y)
 				local P = y:FindFirstChild("HumanoidRootPart") or (y:FindFirstChild("Engine"))
 				getgenv().AimPos = CFrame.new(P.Position.X, 40, P.Position.Z)
@@ -8024,12 +8133,8 @@ function AutoQuestDojo()
 				end
 				getgenv().RoughSea = V
 				P = CFrame.new(-32975.9921875, 10, 25963.7109375 + RoughSea)
-				if not t.Character.Humanoid.Sit then
-					toTarget(y.VehicleSeat.CFrame * CFrame.new(0, 1, 0))
-					task.wait(0.08)
-					if not t.Character.Humanoid.Sit and t.Character.Humanoid.Health > 0 then
-						pcall(function() y.VehicleSeat:Sit(t.Character.Humanoid) end)
-					end
+				if not SitInBoat(y.VehicleSeat) then
+					return
 				else
 					manageTween(y.VehicleSeat, P, 350, "TweenBoat")
 				end
@@ -8056,29 +8161,19 @@ function AutoQuestDojo()
 				end
 				getgenv().RoughSea = V
 				Y = CFrame.new(-32975.9921875, 10, 25963.7109375 + RoughSea)
-				if not t.Character.Humanoid.Sit then
-					toTarget(P.VehicleSeat.CFrame * CFrame.new(0, 1, 0))
-					task.wait(0.08)
-					if not t.Character.Humanoid.Sit and t.Character.Humanoid.Health > 0 then
-						pcall(function() P.VehicleSeat:Sit(t.Character.Humanoid) end)
-					end
+				if not SitInBoat(P.VehicleSeat) then
+					return
 				else
 					manageTween(P.VehicleSeat, Y, 350, "TweenBoat")
 				end
 			end
 		else
-			pcall(function()
-				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
-					t.Character.Humanoid.Sit = false
-				end
-			end)
+			UnseatPlayer()
 			repeat
 				task.wait()
-				pcall(function()
-					if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
-						t.Character.Humanoid.Sit = false
-					end
-				end)
+				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+					UnseatPlayer()
+				end
 				TeleportSeaEvents(y)
 				local P = y:FindFirstChild("HumanoidRootPart")
 				getgenv().AimPos = CFrame.new(P.Position.X, 40, P.Position.Z)
@@ -10347,7 +10442,7 @@ local function EnableBoatNoclip()
 					local boat = seat:FindFirstAncestorOfClass("Model") or seat.Parent
 					if boat then
 						for _, part in ipairs(boat:GetDescendants()) do
-							if part:IsA("BasePart") and part.CanCollide then
+							if part:IsA("BasePart") and not part:IsA("VehicleSeat") and not part:IsA("Seat") and part.Name ~= "VehicleSeat" and part.CanCollide then
 								part.CanCollide = false
 							end
 						end
@@ -10369,7 +10464,7 @@ function NoclipBoat(boat)
 	if not boat then return end
 	pcall(function()
 		for _, part in ipairs(boat:GetDescendants()) do
-			if part:IsA("BasePart") and part.CanCollide then
+			if part:IsA("BasePart") and not part:IsA("VehicleSeat") and not part:IsA("Seat") and part.Name ~= "VehicleSeat" and part.CanCollide then
 				part.CanCollide = false
 			end
 		end
@@ -10430,16 +10525,6 @@ function manageTween(J, F, q, c)
 		TweenKey = c,
 	}
 
-	-- Add BodyVelocity anchor to eliminate wave buoyancy bounce
-	local bodyVel = J:FindFirstChild("BoatTweenBV")
-	if not bodyVel then
-		bodyVel = Instance.new("BodyVelocity")
-		bodyVel.Name = "BoatTweenBV"
-		bodyVel.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-		bodyVel.Velocity = Vector3.zero
-		bodyVel.Parent = J
-	end
-
 	local function finish(state)
 		if isDone then return end
 		isDone = true
@@ -10450,9 +10535,6 @@ function manageTween(J, F, q, c)
 		end
 		if getgenv()[c] == tweenObj then
 			getgenv()[c] = nil
-		end
-		if bodyVel and bodyVel.Parent then
-			pcall(function() bodyVel:Destroy() end)
 		end
 		if ActiveBoatCount == 0 then
 			DisableBoatNoclip()
@@ -10503,10 +10585,10 @@ function manageTween(J, F, q, c)
 					break
 				end
 
-				-- Check seating
+				-- Check seating with generous grace period for temporary desyncs
 				if humanoid.SeatPart ~= J then
 					unseatedTime = unseatedTime + dt
-					if unseatedTime > 3.0 then
+					if unseatedTime > 5.0 then
 						finish(Enum.PlaybackState.Cancelled)
 						break
 					end
@@ -10516,8 +10598,9 @@ function manageTween(J, F, q, c)
 
 				local targetCF = tweenObj.Target
 				local currentPos = J.Position
-				-- Safe cruise elevation clamped to natural boat waterline
-				local cruiseY = math.clamp(currentPos.Y, 9, 14)
+				-- Safe cruise elevation above wave crests (prevents water damage and wave-induced unseating)
+				local targetY = targetCF.Position.Y
+				local cruiseY = (targetY and targetY > 5) and targetY or 20
 				local targetPos = Vector3.new(targetCF.Position.X, cruiseY, targetCF.Position.Z)
 				local delta = targetPos - currentPos
 				local horizDist = Vector2.new(delta.X, delta.Z).Magnitude
@@ -10529,10 +10612,6 @@ function manageTween(J, F, q, c)
 				pcall(function()
 					J.AssemblyLinearVelocity = Vector3.zero
 					J.AssemblyAngularVelocity = Vector3.zero
-					if boat and boat.PrimaryPart and boat.PrimaryPart ~= J then
-						boat.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
-						boat.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
-					end
 				end)
 
 				if horizDist <= math.max(25, step) then
@@ -10615,7 +10694,7 @@ function SpinBoat()
 end
 function NoclipBoat(P)
 	for Y, Y in ipairs(P:GetDescendants()) do
-		if (Y:IsA("BasePart") or (Y:IsA("Part")) or (Y:IsA("MeshPart"))) and Y.CanCollide then
+		if (Y:IsA("BasePart") or (Y:IsA("Part")) or (Y:IsA("MeshPart"))) and not Y:IsA("VehicleSeat") and not Y:IsA("Seat") and Y.Name ~= "VehicleSeat" and Y.CanCollide then
 			Y.CanCollide = false
 		end
 	end
@@ -10638,17 +10717,7 @@ function BuyBoatAndTeleBoat(P)
 	end
 
 	local function EnsureSeated(seat)
-		local char = t.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if not hum or hum.Health <= 0 then return false end
-		if hum.SeatPart == seat then return true end
-
-		toTarget(seat.CFrame * CFrame.new(0, 1, 0))
-		task.wait(0.08)
-		if hum.SeatPart ~= seat and hum.Health > 0 then
-			pcall(function() seat:Sit(hum) end)
-		end
-		return hum.SeatPart == seat
+		return SitInBoat(seat)
 	end
 
 	if not Y or Y and t:DistanceFromCharacter(Y.VehicleSeat.Position) >= 4000 then
@@ -10694,100 +10763,116 @@ function BuyBoatAndTeleBoat(P)
 		task.spawn(function()
 			NoclipBoat(Y)
 		end)
-		local currentSeatPos = Y.VehicleSeat.Position
-		local cruiseY = math.clamp(currentSeatPos.Y, 9, 14)
-		local distFromTiki = (Vector2.new(currentSeatPos.X, currentSeatPos.Z) - Vector2.new(-16132.5, 435.0)).Magnitude
+		if not SitInBoat(Y.VehicleSeat) then
+			return
+		end
 
-		if Settings["Tween Until Have Sea Event"] then
-			local targetDest
-			-- If near Tiki Outpost harbor, route through Zone 1 waypoint to safely clear island cliffs
-			if distFromTiki < 3500 and Settings["Select Zone"] ~= "Zone 1" then
-				targetDest = CFrame.new(-21767.4765625, cruiseY, 5815.41259765625)
-			else
-				local zoneCF = SelectedZoneCFrame()
-				local targetX = zoneCF.Position.X
-				local targetZ = math.max(zoneCF.Position.Z, 25963) + 30000
-				targetDest = CFrame.new(targetX, cruiseY, targetZ)
+		local currentSeatPos = Y.VehicleSeat.Position
+		local cruiseY = 20
+		local currentXZ = Vector2.new(currentSeatPos.X, currentSeatPos.Z)
+
+		-- Waypoints for safe, uninterrupted sea navigation from Tiki Outpost all the way to Zone 6
+		local ZoneOrder = { "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6" }
+		local ZoneCoords = {
+			["Zone 1"] = Vector3.new(-21767.4765625, 20, 5815.41259765625),
+			["Zone 2"] = Vector3.new(-26017.931640625, 20, 5657.8837890625),
+			["Zone 3"] = Vector3.new(-29545.703125, 20, 6377.98974609375),
+			["Zone 4"] = Vector3.new(-33609.7578125, 20, 7422.890625),
+			["Zone 5"] = Vector3.new(-38480.42578125, 20, 10350.943359375),
+			["Zone 6"] = Vector3.new(-32975.9921875, 20, 25963.7109375),
+		}
+
+		local selectedZone = Settings["Select Zone"] or "Zone 6"
+		local targetIndex = 6
+		for idx, name in ipairs(ZoneOrder) do
+			if name == selectedZone then
+				targetIndex = idx
+				break
 			end
-			if not EnsureSeated(Y.VehicleSeat) then
-				return
-			end
-			l(Y, targetDest, 350)
-		else
-			local H, C = CFrame.new(654.3875732421875, cruiseY, 6321.95947265625), DecectPartRoughSea()
+		end
+
+		-- Non-blocking rough sea check if enabled
+		local roughSeaOffset = 0
+		if Settings["Teleport Boat Other CFrame if Rough Sea"] then
+			local C = DecectPartRoughSea()
 			if C then
-				task.wait(1)
 				V = if V == 0 then 7000 else 0
 				Instance.new("IntValue", C).Name = "Ignored"
-				task.wait(0.5)
 			end
-			getgenv().RoughSea = Settings["Teleport Boat Other CFrame if Rough Sea"] and V or 0
-			if game.PlaceId == getgenv().CheckPlaceId then
-				local zoneCF = SelectedZoneCFrame()
-				H = CFrame.new(zoneCF.Position.X, cruiseY, zoneCF.Position.Z + RoughSea)
-			end
+			roughSeaOffset = V
+		end
 
-			local targetDest
-			if distFromTiki < 3500 and Settings["Select Zone"] ~= "Zone 1" then
-				targetDest = CFrame.new(-21767.4765625, cruiseY, 5815.41259765625)
-			else
-				targetDest = H
+		-- Progressively route through waypoints so the boat smoothly transitions past Zone 4 into Zone 5 & 6
+		local targetDestPos = ZoneCoords[ZoneOrder[targetIndex]]
+		for idx = 1, targetIndex - 1 do
+			local wp = ZoneCoords[ZoneOrder[idx]]
+			local distToWP = (currentXZ - Vector2.new(wp.X, wp.Z)).Magnitude
+			if distToWP > 450 then
+				targetDestPos = wp
+				break
 			end
+		end
 
-			local distToDest = (Vector2.new(currentSeatPos.X, currentSeatPos.Z) - Vector2.new(targetDest.Position.X, targetDest.Position.Z)).Magnitude
-			if distToDest > 100 then
-				if not EnsureSeated(Y.VehicleSeat) then
-					return
-				end
-				l(Y, targetDest, 350)
-			else
-				if Settings["Auto Repair Ur Ship"] then
-					if t.PlayerGui.Main.BottomHUDList.ShipHealthBar.Visible then
-						local C = string.gsub(
-							game:GetService("Players").LocalPlayer.PlayerGui.Main.BottomHUDList.ShipHealthBar.TextLabel.Text,
-							"Ship ",
-							""
-						)
-						C = string.split(C, "/")
-						if tonumber(C[1]) < tonumber(C[2]) then
-							if t:DistanceFromCharacter(Y.PrimaryPart.Position) < 20 then
-								if not t.Character.Humanoid.Sit then
-									if t.Character:FindFirstChild("_RepairHammer") then
-										if t.Character._RepairHammer:FindFirstChild("M1UP") then
-											t.Character._RepairHammer.M1UP:Destroy()
-										elseif not t.Character._RepairHammer:GetAttribute("Repairing") then
-											t.Character._RepairHammer.M1Down:FireServer("Default")
-											task.wait(0.5)
-										end
-									else
-										game:GetService("ReplicatedStorage").Remotes.SubclassNetwork.UseSubclass
-											:InvokeServer(unpack({ [1] = { Action = "RequestHammer" } }))
-										task.wait(3)
+		-- If "Tween Until Have Sea Event" is active, continue deep into Zone 6 rough waters until an event spawns
+		if Settings["Tween Until Have Sea Event"] then
+			local distToZone6 = (currentXZ - Vector2.new(ZoneCoords["Zone 6"].X, ZoneCoords["Zone 6"].Z)).Magnitude
+			if distToZone6 <= 600 or currentSeatPos.Z >= 25000 then
+				targetDestPos = Vector3.new(-32975.9921875, 20, math.max(currentSeatPos.Z + 15000, 55000))
+			end
+		end
+
+		local finalTargetCF = CFrame.new(targetDestPos.X, cruiseY, targetDestPos.Z + roughSeaOffset)
+		local distToFinal = (currentXZ - Vector2.new(finalTargetCF.Position.X, finalTargetCF.Position.Z)).Magnitude
+
+		if distToFinal > 80 or Settings["Tween Until Have Sea Event"] then
+			l(Y, finalTargetCF, 350)
+		else
+			if Settings["Auto Repair Ur Ship"] then
+				if t.PlayerGui.Main.BottomHUDList.ShipHealthBar.Visible then
+					local C = string.gsub(
+						game:GetService("Players").LocalPlayer.PlayerGui.Main.BottomHUDList.ShipHealthBar.TextLabel.Text,
+						"Ship ",
+						""
+					)
+					C = string.split(C, "/")
+					if tonumber(C[1]) < tonumber(C[2]) then
+						if t:DistanceFromCharacter(Y.PrimaryPart.Position) < 20 then
+							if not t.Character.Humanoid.Sit then
+								if t.Character:FindFirstChild("_RepairHammer") then
+									if t.Character._RepairHammer:FindFirstChild("M1UP") then
+										t.Character._RepairHammer.M1UP:Destroy()
+									elseif not t.Character._RepairHammer:GetAttribute("Repairing") then
+										t.Character._RepairHammer.M1Down:FireServer("Default")
+										task.wait(0.5)
 									end
 								else
-									toTarget(Y.PrimaryPart.CFrame * CFrame.new(0, 15, 0))
+									game:GetService("ReplicatedStorage").Remotes.SubclassNetwork.UseSubclass
+										:InvokeServer(unpack({ [1] = { Action = "RequestHammer" } }))
+									task.wait(3)
 								end
 							else
 								toTarget(Y.PrimaryPart.CFrame * CFrame.new(0, 15, 0))
 							end
-							return
+						else
+							toTarget(Y.PrimaryPart.CFrame * CFrame.new(0, 15, 0))
 						end
-					end
-				end
-				if not P then
-					if not EnsureSeated(Y.VehicleSeat) then
 						return
 					end
-					local destCF = CFrame.new(H.Position.X, cruiseY, H.Position.Z)
-					if DetectSeaEvents(true) then
-						local startT = tick()
-						repeat
-							task.wait()
-							toTarget(destCF * CFrame.new(0, 2500, 0))
-						until tick() - startT >= 12
-					elseif t.Character.Humanoid.Sit then
-						l(Y, destCF, 350)
-					end
+				end
+			end
+			if not P then
+				if not EnsureSeated(Y.VehicleSeat) then
+					return
+				end
+				local destCF = finalTargetCF
+				if DetectSeaEvents(true) then
+					local startT = tick()
+					repeat
+						task.wait()
+						toTarget(destCF * CFrame.new(0, 2500, 0))
+					until tick() - startT >= 12
+				elseif t.Character.Humanoid.Sit then
+					l(Y, destCF, 350)
 				end
 			end
 		end
@@ -10868,7 +10953,18 @@ function DetectSeaEvents(b)
 	end
 	if b or isTweenAll or l.Shark then
 		local X = DetectMob({ "Shark", "Fish Crew Member" })
-		if X and t:DistanceFromCharacter(X.HumanoidRootPart.Position) < 2000 then
+		if not X then
+			for _, enemy in ipairs(game:GetService("Workspace").Enemies:GetChildren()) do
+				if (enemy.Name == "Shark" or string.find(enemy.Name, "Shark") or enemy.Name == "Fish Crew Member") and IsMobAlive(enemy) then
+					local root = enemy:FindFirstChild("HumanoidRootPart") or enemy.PrimaryPart
+					if root and t:DistanceFromCharacter(root.Position) < 2000 then
+						X = enemy
+						break
+					end
+				end
+			end
+		end
+		if X and (X:FindFirstChild("HumanoidRootPart") or X.PrimaryPart) and t:DistanceFromCharacter((X:FindFirstChild("HumanoidRootPart") or X.PrimaryPart).Position) < 2000 then
 			return X
 		end
 	end
@@ -10997,22 +11093,16 @@ function AutoSeabeast()
 		BuyBoatAndTeleBoat()
 	else
 		y()
-		pcall(function()
-			if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
-				t.Character.Humanoid.Sit = false
-			end
-		end)
+		UnseatPlayer()
 		if b.Name == "Terrorshark" then
 			getgenv().PathTerrorshark = b
 		end
 		getgenv().PathSpinBoat = b
 		repeat
 			task.wait()
-			pcall(function()
-				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
-					t.Character.Humanoid.Sit = false
-				end
-			end)
+			if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+				UnseatPlayer()
+			end
 			TeleportSeaEvents(b)
 			if b:FindFirstChildWhichIsA("Humanoid") then
 				if Settings["Use Dragonstorm For Sea Event"] then
@@ -11258,7 +11348,7 @@ ToggleFindMirage = FarmingSeaEventSection.CreateToggle(
 								getgenv().TweenBoatBack:Pause()
 								getgenv().TweenBoatBack:Cancel()
 							end
-							toTarget(P.VehicleSeat.CFrame)
+							SitInBoat(P.VehicleSeat)
 						end
 					else
 						if getgenv().RespawnMirage and Settings["Webhook Find Mirage"] then
@@ -11380,13 +11470,13 @@ function AutoSpawnKitsune()
 	local H = CFrame.new(-32975.9921875, Y, 25963.7109375) * CFrame.new(0, 0, 1000)
 	if CheckMoon() == "Full Moon" and math.floor(18 - y) <= 0 then
 		if (P.VehicleSeat.Position - H.Position).Magnitude > 200 then
-			if not t.Character.Humanoid.Sit then
-				toTarget(P.VehicleSeat.CFrame)
+			if not SitInBoat(P.VehicleSeat) then
+				return
 			else
 				manageTween(P.VehicleSeat, H, 350, "TweenBoat")
 			end
-		elseif not t.Character.Humanoid.Sit then
-			toTarget(P.VehicleSeat.CFrame)
+		elseif not SitInBoat(P.VehicleSeat) then
+			return
 		end
 	else
 		if (P.VehicleSeat.Position - H.Position).Magnitude > 200 then
@@ -11586,8 +11676,7 @@ function AutoFindLeviathan()
 		return
 	end
 	if Settings["Auto Destroy IDK"] and getgenv().DesIdk2 then
-		toTarget(getgenv().OldBoat.VehicleSeat.CFrame)
-		if t.Character.Humanoid.Sit then
+		if SitInBoat(getgenv().OldBoat.VehicleSeat) then
 			getgenv().DesIdk2 = false
 		end
 		return
@@ -11738,9 +11827,7 @@ function AutoFindLeviathan()
 			end
 			g.VehicleSeat.CFrame = CFrame.new(g.VehicleSeat.Position.X, H, g.VehicleSeat.Position.Z)
 		elseif I and Settings["Auto Buy Boat Beast Hunter"] then
-			if not t.Character.Humanoid.Sit then
-				toTarget(I.VehicleSeat.CFrame)
-			end
+			SitInBoat(I.VehicleSeat)
 		end
 	else
 		if getgenv().TweenBoat then
@@ -11916,7 +12003,7 @@ LeviathanEventSection.CreateToggle(
 						end
 						local g = checkboatMulti()
 						if g and not t.Character.Humanoid.Sit then
-							toTarget(g.Seat.CFrame)
+							SitInBoat(g.Seat)
 						elseif
 							t.Character.Humanoid.Sit
 							and (t.Character:FindFirstChild("HumanoidRootPart"))
@@ -12335,7 +12422,7 @@ function ShootHeartLeviathan()
 					wait(1)
 					s(b, workspace.Map:FindFirstChild("FrozenHeart").Inside.Position)
 				else
-					toTarget(b.VehicleSeat.CFrame)
+					SitInBoat(b.VehicleSeat)
 				end
 			elseif t.Character.Humanoid.SeatPart and t.Character.Humanoid.SeatPart.Parent.Name == "Harpoon" then
 				local s = {
@@ -13025,16 +13112,19 @@ function AutoUpgradeRaceDraco()
 					end
 					getgenv().RoughSea = V
 					g = CFrame.new(-32975.9921875, 22, 25963.7109375 + RoughSea)
-					if not t.Character.Humanoid.Sit then
-						toTarget(X.VehicleSeat.CFrame * CFrame.new(0, 1.5, 0))
-						pcall(function() X.VehicleSeat:Sit(t.Character.Humanoid) end)
+					if not SitInBoat(X.VehicleSeat) then
+						return
 					else
 						manageTween(X.VehicleSeat, g, 350, "TweenBoat")
 					end
 				end
 			else
+				UnseatPlayer()
 				repeat
 					task.wait()
+					if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+						UnseatPlayer()
+					end
 					TeleportSeaEvents(b)
 					local X = b:FindFirstChild("HumanoidRootPart")
 					getgenv().AimPos = CFrame.new(X.Position.X, 40, X.Position.Z)
@@ -13667,7 +13757,7 @@ function FullyDraco()
 								getgenv().TweenBoat:Pause()
 								getgenv().TweenBoat:Cancel()
 							end
-							toTarget(g.VehicleSeat.CFrame)
+							SitInBoat(g.VehicleSeat)
 						end
 					end
 				end
@@ -14085,12 +14175,16 @@ function AutoFishV2()
 			if (R.VehicleSeat.Position - m.Position).Magnitude > 50 then
 				R.VehicleSeat.CFrame = m
 			elseif not t.Character.Humanoid.Sit then
-				toTarget(R.VehicleSeat.CFrame)
+				SitInBoat(R.VehicleSeat)
 			end
 		end
 	else
+		UnseatPlayer()
 		repeat
 			task.wait()
+			if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+				UnseatPlayer()
+			end
 			TeleportSeaEvents(g)
 			local R = g:FindFirstChild("HumanoidRootPart")
 			getgenv().AimPos = CFrame.new(R.Position.X, 40, R.Position.Z)
@@ -18073,7 +18167,7 @@ function AutoFindPrehistoric()
 				getgenv().TweenBoatBack:Pause()
 				getgenv().TweenBoatBack:Cancel()
 			end
-			toTarget(g.VehicleSeat.CFrame)
+			SitInBoat(g.VehicleSeat)
 		end
 	else
 		if getgenv().RespawnVolcano and Settings["Webhook Find Prehistoric Island"] then
@@ -18553,7 +18647,7 @@ function FullyEventVolcano()
 						getgenv().TweenBoat:Pause()
 						getgenv().TweenBoat:Cancel()
 					end
-					toTarget(g.VehicleSeat.CFrame)
+					SitInBoat(g.VehicleSeat)
 				end
 			end
 		end
@@ -19835,104 +19929,43 @@ a.CreateToggle(
 a.CreateToggle({ Title = "Auto Load Script", Desc = nil, Default = Settings["Auto Load Script"] or false }, function(T)
 	SaveSettings("Auto Load Script", T)
 end)
-local FpsBoostConnection = nil
-
-local function OptimizeInstance(inst)
-	if not inst then return end
-	local className = inst.ClassName
-	if className == "ParticleEmitter" or className == "Trail" or className == "Smoke" or className == "Fire" or className == "Sparkles" or className == "Beam" then
-		pcall(function()
-			inst.Enabled = false
-			inst:Destroy()
-		end)
-	elseif className == "PointLight" or className == "SpotLight" or className == "SurfaceLight" then
-		pcall(function()
-			inst.Enabled = false
-			inst:Destroy()
-		end)
-	elseif className == "Decal" or className == "Texture" then
-		pcall(function()
-			inst:Destroy()
-		end)
-	elseif className == "BlurEffect" or className == "SunRaysEffect" or className == "ColorCorrectionEffect" or className == "BloomEffect" or className == "DepthOfFieldEffect" or className == "Atmosphere" then
-		pcall(function()
-			inst.Enabled = false
-			inst:Destroy()
-		end)
-	elseif className == "Explosion" then
-		pcall(function()
-			inst.Visible = false
-		end)
-	elseif inst:IsA("BasePart") then
-		pcall(function()
-			inst.Material = Enum.Material.SmoothPlastic
-			inst.Reflectance = 0
-			inst.CastShadow = false
-		end)
-	end
-end
-
 local function ApplyFpsBoost(enable)
 	if enable then
 		pcall(function()
 			local terrain = workspace:FindFirstChildOfClass("Terrain") or workspace.Terrain
 			if terrain then
-				terrain.WaterWaveSize = 0
-				terrain.WaterWaveSpeed = 0
-				terrain.WaterReflectance = 0
-				terrain.WaterTransparency = 0
-				terrain.Decoration = false
+				pcall(function() terrain.WaterWaveSize = 0 end)
+				pcall(function() terrain.WaterWaveSpeed = 0 end)
+				pcall(function() terrain.WaterReflectance = 0 end)
+				pcall(function() terrain.WaterTransparency = 0 end)
 			end
 			local lighting = game:GetService("Lighting")
-			lighting.GlobalShadows = false
-			lighting.FogEnd = 9e9
-			lighting.Brightness = 1
+			pcall(function() lighting.GlobalShadows = false end)
+			pcall(function() lighting.FogEnd = 9e9 end)
 			for _, effect in ipairs(lighting:GetChildren()) do
-				if effect:IsA("PostProcessEffect") or effect:IsA("Atmosphere") or effect:IsA("Sky") then
-					if effect.Name == "LightingLayers" or effect.Name == "SeaTerrorCC" or effect.Name == "FantasySky" or effect.Name == "BaseAtmosphere" or effect:IsA("PostProcessEffect") then
-						pcall(function() effect:Destroy() end)
-					end
+				if effect:IsA("PostProcessEffect") then
+					pcall(function() effect.Enabled = false end)
 				end
 			end
-			settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+			pcall(function() settings().Rendering.MeshCacheSize = 0 end)
 		end)
-
-		-- Asynchronously scan workspace in non-blocking batches so game never freezes
-		task.spawn(function()
-			local descendants = workspace:GetDescendants()
-			local count = 0
-			for _, obj in ipairs(descendants) do
-				if not Settings["Boost Fps"] then break end
-				OptimizeInstance(obj)
-				count = count + 1
-				if count % 300 == 0 then
-					task.wait()
-				end
-			end
-		end)
-
-		-- Listen for new descendants to destroy particles, lights, and textures instantly
-		if not FpsBoostConnection then
-			FpsBoostConnection = workspace.DescendantAdded:Connect(function(obj)
-				if Settings["Boost Fps"] then
-					OptimizeInstance(obj)
-				end
-			end)
-		end
 	else
-		if FpsBoostConnection then
-			FpsBoostConnection:Disconnect()
-			FpsBoostConnection = nil
-		end
 		pcall(function()
 			local lighting = game:GetService("Lighting")
-			lighting.GlobalShadows = true
-			lighting.FogEnd = 100000
+			pcall(function() lighting.GlobalShadows = true end)
+			pcall(function() lighting.FogEnd = 100000 end)
+			for _, effect in ipairs(lighting:GetChildren()) do
+				if effect:IsA("PostProcessEffect") then
+					pcall(function() effect.Enabled = true end)
+				end
+			end
+			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
 		end)
 	end
 end
 
-a.CreateToggle({ Title = "Boost Fps", Desc = "Disables and destroys laggy particles, dynamic lights, and textures to maximize FPS", Default = Settings["Boost Fps"] or false }, function(T)
+a.CreateToggle({ Title = "Boost Fps", Desc = "Optimizes rendering quality, terrain shaders, and dynamic lighting to maximize FPS without destroying game objects", Default = Settings["Boost Fps"] or false }, function(T)
 	SaveSettings("Boost Fps", T)
 	ApplyFpsBoost(T)
 end)
