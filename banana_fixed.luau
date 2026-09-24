@@ -11,15 +11,12 @@ if not LPH_ATTRIBUTES then
 	getgenv().NONE = nil
 end
 
-if getgenv().__BF_LOADED then
-	return getgenv().__BF_RESULT
-end
-
 Settings = {}
 HttpService = game:GetService("HttpService")
 FolderName = "Banana Cat Hub"
 SaveFileNameGame = "-BloxFruitBNNC.json"
-SaveFileName = game.Players.LocalPlayer.Name .. SaveFileNameGame
+local _lp = game:GetService("Players").LocalPlayer
+SaveFileName = (_lp and _lp.Name or "Player") .. SaveFileNameGame
 function SaveSettings(b, t, A)
 	if A ~= nil then
 		Settings[b] = Settings[b] or {}
@@ -81,78 +78,116 @@ function EnsureAllTrueDefaults(b, t)
 		end
 	end
 end
-repeat
-	wait()
-until game:FindFirstChild("CoreGui")
-repeat
-	wait()
-until not game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("LoadingScreen")
-repeat
-	wait()
-until game:IsLoaded() and (game.Players.LocalPlayer:FindFirstChild("DataLoaded"))
-function FireButton(b)
-	b.Selectable = true
-	game:GetService("GuiService").SelectedObject = b
-	game:GetService("VirtualInputManager"):SendKeyEvent(true, "Return", false, b)
-	game:GetService("VirtualInputManager"):SendKeyEvent(false, "Return", false, b)
-	b.Activated:Connect(function()
-		game:GetService("GuiService").SelectedObject = nil
+if not game:IsLoaded() then
+	pcall(function()
+		game.Loaded:Wait()
 	end)
 end
-repeat
-	wait()
-until game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Main (minimal)")
-	or (game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Main"))
-local b = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Main (minimal)")
-	or (game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Main"))
-repeat
-	wait()
-until b:FindFirstChild("ChooseTeam")
-repeat
-	task.wait()
+
+function FireButton(b)
 	pcall(function()
-		if Settings["Select Team"] == "Pirate" then
-			FireButton(
-				game:GetService("Players").LocalPlayer.PlayerGui["Main (minimal)"].ChooseTeam.Container.Pirates.Frame.TextButton
-			)
-			wait(1)
-		else
-			FireButton(
-				game:GetService("Players").LocalPlayer.PlayerGui["Main (minimal)"].ChooseTeam.Container.Marines.Frame.TextButton
-			)
-			wait(1)
-		end
+		b.Selectable = true
+		game:GetService("GuiService").SelectedObject = b
+		game:GetService("VirtualInputManager"):SendKeyEvent(true, "Return", false, b)
+		game:GetService("VirtualInputManager"):SendKeyEvent(false, "Return", false, b)
+		b.Activated:Connect(function()
+			game:GetService("GuiService").SelectedObject = nil
+		end)
 	end)
-until game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Main (minimal)")
-		and (game:GetService("Players").LocalPlayer.PlayerGui["Main (minimal)"]:FindFirstChild("ChooseTeam"))
-		and not game:GetService("Players").LocalPlayer.PlayerGui["Main (minimal)"]:WaitForChild("ChooseTeam").Visible
-	or game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Main")
-		and (game:GetService("Players").LocalPlayer.PlayerGui.Main:FindFirstChild("ChooseTeam"))
-		and not game:GetService("Players").LocalPlayer.PlayerGui.Main:WaitForChild("ChooseTeam").Visible
-game:GetService("GuiService").SelectedObject = nil
-repeat
-	wait()
-until game:IsLoaded() and game.Players.LocalPlayer
-repeat
-	wait()
-until game:FindFirstChild("CoreGui")
+end
+
+task.spawn(function()
+	pcall(function()
+		local Players = game:GetService("Players")
+		local localPlayer = Players.LocalPlayer
+		if not localPlayer then
+			local startWait = tick()
+			repeat
+				task.wait(0.2)
+				localPlayer = Players.LocalPlayer
+			until localPlayer or tick() - startWait > 5
+		end
+		if not localPlayer then return end
+
+		-- Select team if not already on a team
+		if not localPlayer.Team then
+			local selectTeam = (Settings and Settings["Select Team"] == "Pirate") and "Pirates" or "Marines"
+			pcall(function()
+				local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 3)
+				if remotes and remotes:FindFirstChild("CommF_") then
+					remotes.CommF_:InvokeServer("SetTeam", selectTeam)
+				end
+			end)
+
+			-- UI button fallback if ChooseTeam is visible
+			pcall(function()
+				local pg = localPlayer:FindFirstChild("PlayerGui")
+				if pg then
+					local main = pg:FindFirstChild("Main (minimal)") or pg:FindFirstChild("Main")
+					if main and main:FindFirstChild("ChooseTeam") then
+						local ct = main.ChooseTeam
+						if ct.Visible then
+							local container = ct:FindFirstChild("Container")
+							if container then
+								local teamFolder = (selectTeam == "Pirates") and container:FindFirstChild("Pirates") or container:FindFirstChild("Marines")
+								if teamFolder and teamFolder:FindFirstChild("Frame") and teamFolder.Frame:FindFirstChild("TextButton") then
+									FireButton(teamFolder.Frame.TextButton)
+								end
+							end
+						end
+					end
+				end
+			end)
+		end
+		pcall(function()
+			game:GetService("GuiService").SelectedObject = nil
+		end)
+	end)
+end)
+
 getgenv().ExploitReq = syn and syn.request
 	or identifyexecutor() == "Fluxus" and request
 	or http_request
 	or http.request
 	or requests
-if getgenv().LoadScript then
-	return print("Double UI")
+
+-- Safe UI Singleton: Only skip loading if the actual UI screen is already present in GUI hierarchy
+local existingUI = nil
+pcall(function()
+	local uiParent = (gethui and gethui()) or game:GetService("CoreGui")
+	existingUI = uiParent:FindFirstChild("Nousigi Hub GUI")
+	if not existingUI and game:GetService("Players").LocalPlayer then
+		local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+		if pg then
+			existingUI = pg:FindFirstChild("Nousigi Hub GUI")
+		end
+	end
+end)
+
+if existingUI and not getgenv().__BF_RELOAD then
+	pcall(function()
+		existingUI.Enabled = true
+		getgenv().UIToggled = true
+	end)
+	print("[Banana Hub] UI already loaded! Toggled visibility.")
+	return
 end
+
+if existingUI and getgenv().__BF_RELOAD then
+	pcall(function()
+		existingUI:Destroy()
+	end)
+end
+
 getgenv().CheckPlaceId = game.PlaceId == 100117331123089 and 100117331123089 or 7449423635
 getgenv().CheckPlaceId2 = game.PlaceId == 4442272183 and 4442272183 or 79091703265657
 getgenv().CheckPlaceId3 = game.PlaceId == 2753915549 and 2753915549 or 85211729168715
 getgenv().LoadScript = true
-local t = game.Players.LocalPlayer
+local t = game:GetService("Players").LocalPlayer or game.Players.LocalPlayer
 getgenv().getupvalue = debug.getupvalue
 getgenv().getupvalues = debug.getupvalues
-wOrigin = game.workspace._WorldOrigin
-CommF = game.ReplicatedStorage.Remotes.CommF_
+wOrigin = game.workspace:FindFirstChild("_WorldOrigin") or game.workspace
+CommF = (game.ReplicatedStorage:WaitForChild("Remotes", 5) and game.ReplicatedStorage.Remotes:WaitForChild("CommF_", 5)) or game.ReplicatedStorage.Remotes.CommF_
 vu = game:GetService("VirtualUser")
 game:GetService("Players").LocalPlayer.Idled:connect(function()
 	vu:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -175,24 +210,39 @@ end
 getgenv().tablefruitausea3 = {}
 whitelistedfruit = {}
 TableDevilFruit = {}
-local a, s, X = next, game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("GetFruits", false)
-for g, g in a, s, X do
-	if g.Price >= 1000000 then
-		table.insert(whitelistedfruit, string.split(g.Name, "-")[1] .. " Fruit")
-		getgenv().tablefruitausea3[g.Name] = g.Price
-	end
-	TableDevilFruit[g.Name] = false
-end
-getgenv().tablefruitausea3["Dragon (East)-Dragon (East)"] = 15000000
-getgenv().tablefruitausea3["Dragon (West)-Dragon (West)"] = 15000000
-ItemId = require(game.ReplicatedStorage.Economy.ItemId)
-function CheckFruitReal(g)
-	local G, f, K = next, game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("GetFruits", false)
-	for R, R in G, f, K do
-		if R.Name == g then
-			return R
+pcall(function()
+	local fruits = game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("GetFruits", false)
+	if type(fruits) == "table" then
+		for _, g in pairs(fruits) do
+			if type(g) == "table" and g.Price and g.Name then
+				if g.Price >= 1000000 then
+					table.insert(whitelistedfruit, string.split(g.Name, "-")[1] .. " Fruit")
+					getgenv().tablefruitausea3[g.Name] = g.Price
+				end
+				TableDevilFruit[g.Name] = false
+			end
 		end
 	end
+end)
+getgenv().tablefruitausea3["Dragon (East)-Dragon (East)"] = 15000000
+getgenv().tablefruitausea3["Dragon (West)-Dragon (West)"] = 15000000
+pcall(function()
+	ItemId = require(game.ReplicatedStorage.Economy.ItemId)
+end)
+function CheckFruitReal(g)
+	local result = nil
+	pcall(function()
+		local fruits = game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("GetFruits", false)
+		if type(fruits) == "table" then
+			for _, R in pairs(fruits) do
+				if type(R) == "table" and R.Name == g then
+					result = R
+					break
+				end
+			end
+		end
+	end)
+	return result
 end
 SkinFruit = {}
 -- spawn(function()
@@ -366,6 +416,7 @@ function DetectNpc(f)
 end
 
 SectionShopFighting.CreateToggle({ Title = "Black Leg", Desc = nil, Default = false }, function(f)
+	SaveSettings("Spam Join", f)
 	if f then
 		spawn(function()
 			while g["Black Leg"] and (task.wait()) do
@@ -1466,7 +1517,6 @@ SectionServer.CreateBox(
 	end
 )
 SectionServer.CreateToggle({ Title = "Spam Join", Desc = nil, Default = Settings["Spam Join"] or false }, function(f)
-	SaveSettings("Spam Join", f)
 end)
 if not (bit32 or bit) then
 	({}).bxor = function(f, K)
@@ -1806,20 +1856,19 @@ function IsMobAlive(K)
 		return true
 	end
 end
-local K = { "Deandre", "Urban", "Diablo" }
+local EliteNames = { "Deandre", "Urban", "Diablo" }
 function DetectEliteHunter()
-	local R, m, E = next, game:GetService("ReplicatedStorage"):GetChildren()
-	for l, l in R, m, E do
-		if l:IsA("Model") and (table.find(K, l.Name)) and (IsMobAlive(l)) then
+	for _, l in ipairs(game:GetService("Workspace").Enemies:GetChildren()) do
+		if l:IsA("Model") and table.find(EliteNames, l.Name) and IsMobAlive(l) then
 			return l
 		end
 	end
-	E, m, R = next, game:GetService("Workspace").Enemies:GetChildren()
-	for l, l in E, m, R do
-		if l:IsA("Model") and (table.find(K, l.Name)) and (IsMobAlive(l)) then
+	for _, l in ipairs(game:GetService("ReplicatedStorage"):GetChildren()) do
+		if l:IsA("Model") and table.find(EliteNames, l.Name) and (IsMobAlive(l) or l:FindFirstChild("HumanoidRootPart")) then
 			return l
 		end
 	end
+	return nil
 end
 local K = 0
 lastCheckTime = tick()
@@ -2389,6 +2438,7 @@ SectionLocalPlayerMain.CreateDropdown(
 SectionLocalPlayerMain.CreateToggle(
 	{ Title = "Auto Stats", Desc = nil, Default = Settings["Auto Stats"] or false },
 	function(K)
+		SaveSettings("Auto Stats", K)
 		spawn(function()
 			while Settings["Auto Stats"] and (task.wait(0.3)) do
 				pcall(function()
@@ -2405,9 +2455,28 @@ SectionLocalPlayerMain.CreateToggle(
 				end)
 			end
 		end)
-		SaveSettings("Auto Stats", K)
 	end
 )
+-- Auto Stats Background Loop
+
+task.spawn(function()
+	while task.wait(0.5) do
+		if Settings["Auto Stats"] and Settings["Select Stats"] then
+			pcall(function()
+				for statName, enabled in pairs(Settings["Select Stats"]) do
+					if enabled and t.Data and t.Data:FindFirstChild("Points") and t.Data.Points.Value > 0 then
+						local statObj = t.Data.Stats and t.Data.Stats:FindFirstChild(statName)
+						if statObj and statObj:FindFirstChild("Level") and statObj.Level.Value < 2800 then
+							game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AddPoint", statName, 9999)
+							task.wait(0.3)
+						end
+					end
+				end
+			end)
+		end
+	end
+end)
+
 SectionLocalPlayerMain.CreateDropdown(
 	{
 		Title = "Select Team",
@@ -2430,6 +2499,9 @@ SectionLocalPlayerMain.CreateDropdown(
 )
 SectionLocalPlayerMain.CreateToggle({ Title = "Noclip", Desc = nil, Default = Settings.Noclip or false }, function(K)
 	SaveSettings("Noclip", K)
+	if SetNoClip then
+		SetNoClip(K)
+	end
 end)
 local K
 function SetRobloxGUI(R)
@@ -2611,17 +2683,31 @@ function SetNoClip(l)
 		return
 	end
 	local S, L = Q:FindFirstChild("HumanoidRootPart"), Q:FindFirstChildOfClass("Humanoid")
-	if not l then
-		for l, l in ipairs(Q:GetDescendants()) do
-			if l:IsA("BasePart") then
-				l.CanCollide = true
+	if l then
+		for _, part in ipairs(Q:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
 			end
 		end
 		if L then
-			L.PlatformStand = false
+			L:ChangeState(11)
 		end
-		if S and (S:FindFirstChild("FloatForce")) and not ToggleNoclip() then
-			S.FloatForce:Destroy()
+	else
+		local stillNoclip = (typeof(ToggleNoclip) == "function" and ToggleNoclip())
+			or (Settings and (Settings.Noclip or Settings["Start Farm"] or Settings["Auto Chest"] or Settings["Teleport To Fruit"]))
+			or (TweenManager and (TweenManager.TweenRunning or TweenManager.currentTween ~= nil))
+		if not stillNoclip then
+			for _, part in ipairs(Q:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = true
+				end
+			end
+			if L then
+				L.PlatformStand = false
+			end
+			if S and S:FindFirstChild("FloatForce") then
+				S.FloatForce:Destroy()
+			end
 		end
 	end
 end
@@ -2722,6 +2808,37 @@ function ToggleNoclip()
 		return true
 	end
 end
+
+-- [[ Dedicated RunService.Stepped Rock-Solid Noclip System ]]
+local runService = game:GetService("RunService")
+if getgenv().BananaNoclipConn then
+	pcall(function() getgenv().BananaNoclipConn:Disconnect() end)
+	getgenv().BananaNoclipConn = nil
+end
+getgenv().BananaNoclipConn = runService.Stepped:Connect(function()
+	pcall(function()
+		local char = (t and t.Character) or (game.Players.LocalPlayer and game.Players.LocalPlayer.Character)
+		if not char then return end
+		local isNoclipActive = getgenv().noclip
+			or (TweenManager and (TweenManager.TweenRunning or TweenManager.currentTween ~= nil))
+			or (char:FindFirstChild("HumanoidRootPart") and char.HumanoidRootPart:FindFirstChild("FloatForce") ~= nil)
+			or (typeof(ToggleNoclip) == "function" and ToggleNoclip())
+			or (Settings and (Settings.Noclip or Settings["Start Farm"] or Settings["Auto Chest"] or Settings["Teleport To Fruit"]))
+			or _G.NoClip
+
+		if isNoclipActive then
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") and part.CanCollide then
+					part.CanCollide = false
+				end
+			end
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum:ChangeState(11) -- StrafingNoPhysics disables terrain/part collision physics
+			end
+		end
+	end)
+end)
 local l = game:GetService("TweenService")
 getgenv().TweenManager = {
 	currentTween = nil,
@@ -2792,9 +2909,15 @@ getgenv().TweenManager = {
 				if not l then
 					return
 				end
-				for S, S in ipairs(l:GetDescendants()) do
-					if S:IsA("BasePart") then
-						S.CanCollide = true
+				local stillNoclip = getgenv().noclip
+					or (typeof(ToggleNoclip) == "function" and ToggleNoclip())
+					or (Settings and (Settings.Noclip or Settings["Start Farm"] or Settings["Auto Chest"] or Settings["Teleport To Fruit"]))
+					or (TweenManager and (TweenManager.TweenRunning or TweenManager.currentTween ~= nil))
+				if not stillNoclip then
+					for S, S in ipairs(l:GetDescendants()) do
+						if S:IsA("BasePart") then
+							S.CanCollide = true
+						end
 					end
 				end
 				local S = l:FindFirstChildOfClass("Humanoid")
@@ -3335,7 +3458,7 @@ local function B(Z, C, J, F)
 	if not q or Z.Parent ~= q or not c or c.Health <= 0 then
 		return
 	end
-	if tick() - k.LastTP < 1 and C == k.LastCF then
+	if TweenManager.TweenRunning and TweenManager.currentGoal and (TweenManager.currentGoal.Position - C.Position).Magnitude <= 15 then
 		return
 	end
 	TweenManager.CancelTweenOnly()
@@ -3377,41 +3500,37 @@ local function B(Z, C, J, F)
 	end
 	D = coroutine.create(function()
 		local u, W = Z.Position, C.Position
-		local O, z, U, h, p, w = (W - u).Magnitude, 1 / 0, (tick()), true
+		local O = (W - u).Magnitude
 		while not c do
 			local M = t.Character
 			local j = M and (M:FindFirstChildOfClass("Humanoid"))
 			if M ~= q or Z.Parent ~= M or not j or j.Health <= 0 or Z.Anchored or O <= F then
 				break
 			end
-			local q, v0, T0 = x.Heartbeat:Wait(), H(), Z.Position
-			M = (W - T0).Magnitude
-			if M < z - 5 then
-				z, U = M, (tick())
+			local dt = x.Heartbeat:Wait()
+			local dir = W - u
+			local dist = dir.Magnitude
+			local speed = math.max(tonumber(J) or 300, 100)
+			local step = math.min(speed * dt, dist)
+			if dist <= step or dist <= 0.1 then
+				u = W
 			else
-				h = if tick() - U > 2.5 then false else h
+				u = u + (dir / dist) * step
 			end
-			if h and p and w and M > w + Y then
-				v0.cap = math.max(v0.cap * 0.7, e)
-				v0.nextRaise = tick() + 3
-				u = T0
-			else
-				u = if h and p and (T0 - p).Magnitude > Y then T0 else u
-			end
-			j = W - u
-			local e, Y = j.Magnitude, math.min(math.min(J, v0.cap) * q, P)
-			if e > Y and tick() >= v0.nextRaise then
-				v0.cap = math.min(v0.cap * 1.08, J)
-				v0.nextRaise = tick() + 1.5
-			end
-			u = if e <= Y or e <= 0.05 then W else u + j / e * Y
 			O = (W - u).Magnitude
 			I()
 			getgenv().noclip = true
+			for _, part in ipairs(M:GetDescendants()) do
+				if part:IsA("BasePart") and part.CanCollide then
+					part.CanCollide = false
+				end
+			end
+			if j then
+				j:ChangeState(11)
+			end
 			Z.CFrame = CFrame.new(u)
 			Z.AssemblyLinearVelocity = Vector3.new(0.0, 0.0, 0.0)
 			Z.AssemblyAngularVelocity = Vector3.new(0.0, 0.0, 0.0)
-			p, w = u, M
 		end
 		if not c and Z.Parent == t.Character and (W - Z.Position).Magnitude <= F then
 			Z.CFrame = C
@@ -3478,7 +3597,8 @@ function toTarget(P, e)
 			end
 		end
 	end
-	if Y < (e and 8 or 150) and not G and not ReadyToDodge then
+	local snapThreshold = e and 8 or 15
+	if Y < snapThreshold and not G and not ReadyToDodge then
 		TweenManager.CancelTweenOnly()
 		I()
 		H.CFrame = P
@@ -3692,19 +3812,20 @@ function toTarget(P, e)
 	if H.Position.Y < -60 and H.Position.Y > -100 then
 		H.CFrame = H.CFrame * CFrame.new(0, 20, 0)
 	end
-	Z = CFrame.new()
-	Z = if ReadyToDodge
+	local offsetCF = CFrame.new()
+	offsetCF = if ReadyToDodge
 		then (CFrame.new(0, 200, 0))
-		else if G then (CFrame.new(0, Settings["Distance Teleport Y"] or 800, 0)) else Z
-	Y, e = Settings["Speed Tween "] or 300, P * Z
-	if (e.Position - H.Position).Magnitude < 3 and not ReadyToDodge and not G then
+		else if G then (CFrame.new(0, Settings["Distance Teleport Y"] or 800, 0)) else offsetCF
+	local targetSpeed, targetGoal = Settings["Speed Tween "] or 300, P * offsetCF
+	if (targetGoal.Position - H.Position).Magnitude < 3 and not ReadyToDodge and not G then
 		TweenManager.CancelTweenOnly()
-		H.CFrame = e
+		H.CFrame = targetGoal
 		return
 	end
-	B(H, e, Y)
+	B(H, targetGoal, targetSpeed)
 end
 getgenv().BackupTween = toTarget
+getgenv().toTarget = toTarget
 spawn(function()
 	while wait(0.25) do
 		local G, G = pcall(function()
@@ -3758,8 +3879,12 @@ spawn(function()
 	end
 end)
 function equiptool(g)
-	if g and (t:FindFirstChild("Backpack")) and (t.Backpack:FindFirstChild(g)) and not t.Character.Humanoid.Sit then
-		t.Character.Humanoid:EquipTool(t.Backpack:FindFirstChild(g))
+	if g and t:FindFirstChild("Backpack") and t.Backpack:FindFirstChild(g) then
+		local char = t.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum and hum.Health > 0 then
+			hum:EquipTool(t.Backpack:FindFirstChild(g))
+		end
 	end
 end
 function NameWeapon(g, G)
@@ -4004,6 +4129,40 @@ if t.Character then
 	g(t.Character)
 end
 t.CharacterAdded:Connect(g)
+
+local function SetupCharDeathWatchdog(char)
+	if not char then return end
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum then
+		hum.Died:Connect(function()
+			pcall(function()
+				if type(y) == "function" then y() end
+				if TweenManager and TweenManager.CancelCurrent then
+					TweenManager.CancelCurrent()
+				end
+				hum.Sit = false
+				local hrp = char:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Anchored = false
+					for _, w in ipairs(hrp:GetChildren()) do
+						if w:IsA("Weld") or w:IsA("WeldConstraint") then
+							w:Destroy()
+						end
+					end
+				end
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("SeatWeld") or (part:IsA("Weld") and part.Name == "SeatWeld") then
+						part:Destroy()
+					end
+				end
+			end)
+		end)
+	end
+end
+if t.Character then
+	task.spawn(SetupCharDeathWatchdog, t.Character)
+end
+t.CharacterAdded:Connect(SetupCharDeathWatchdog)
 local function m(E)
 	return t.Character
 		and (t.Character:FindFirstChild("HumanoidRootPart"))
@@ -4184,15 +4343,38 @@ function DeleteIgnoredMob()
 		end
 	end
 end
+local function NormalizeMobName(name)
+	if not name then return "" end
+	local n = tostring(name):gsub(" %p?Lv%.? %d+%p?", ""):lower():match("^%s*(.-)%s*$")
+	return n
+end
+
+local function MobNameMatches(candidate, target)
+	if not candidate or not target then return false end
+	if typeof(target) == "table" then
+		for _, t in ipairs(target) do
+			if MobNameMatches(candidate, t) then return true end
+		end
+		return false
+	end
+	local c = NormalizeMobName(candidate)
+	local t = NormalizeMobName(target)
+	if c == t then return true end
+	if c:gsub("s$", "") == t:gsub("s$", "") then return true end
+	if string.find(c, t, 1, true) or string.find(t, c, 1, true) then return true end
+	return false
+end
+
 function DetectMob(Q)
-	local d, I = 1 / 0
+	local d, I = 1 / 0, nil
+	local char = game:GetService("Players").LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
 	for _, o in pairs(game.Workspace.Enemies:GetChildren()) do
-		if (typeof(Q) == "table" and (table.find(Q, o.Name)) or o.Name == Q) and (IsMobAlive(o)) then
-			_ = (
-				o.HumanoidRootPart.Position - game:GetService("Players").LocalPlayer.Character.HumanoidRootPart.Position
-			).magnitude
-			if _ < d then
-				d, I = _, o
+		if (typeof(Q) == "table" and (table.find(Q, o.Name) or MobNameMatches(o.Name, Q)) or o.Name == Q or MobNameMatches(o.Name, Q)) and (IsMobAlive(o)) then
+			local dist = (o.HumanoidRootPart.Position - hrp.Position).magnitude
+			if dist < d then
+				d, I = dist, o
 			end
 		end
 	end
@@ -4413,6 +4595,7 @@ SettingFarmMainSection.CreateSlider(
 SettingFarmMainSection.CreateToggle(
 	{ Title = "Auto Click", Desc = nil, Default = Settings["Auto Click"] or false },
 	function(I)
+		SaveSettings("Auto Click", I)
 		if I then
 			spawn(function()
 				while Settings["Auto Click"] and (task.wait()) do
@@ -4434,12 +4617,12 @@ SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Click", I)
 	end
 )
 SettingFarmMainSection.CreateToggle(
 	{ Title = "Kill Aura With DragonStorm", Desc = nil, Default = Settings["Kill Aura With DragonStorm"] or false },
 	function(I)
+		SaveSettings("Kill Aura With DragonStorm", I)
 		if I then
 			spawn(function()
 				while Settings["Kill Aura With DragonStorm"] and (wait()) do
@@ -4455,7 +4638,6 @@ SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Kill Aura With DragonStorm", I)
 	end
 )
 function FFCMatch(m, I)
@@ -4469,6 +4651,7 @@ end
 SettingFarmMainSection.CreateToggle(
 	{ Title = "Auto Turn On Buso", Desc = nil, Default = Settings["Auto Turn On Buso"] or true },
 	function(m)
+		SaveSettings("Auto Turn On Buso", m)
 		if m then
 			spawn(function()
 				while Settings["Auto Turn On Buso"] and (wait(1)) do
@@ -4481,12 +4664,12 @@ SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Turn On Buso", m)
 	end
 )
 SettingFarmMainSection.CreateToggle(
 	{ Title = "Auto Turn On Observation", Desc = nil, Default = Settings["Auto Turn On Observation"] or false },
 	function(m)
+		SaveSettings("Auto Turn On Observation", m)
 		if m then
 			spawn(function()
 				while Settings["Auto Turn On Observation"] and (wait(1)) do
@@ -4501,7 +4684,6 @@ SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Turn On Observation", m)
 	end
 )
 function TurnOnV4()
@@ -4518,6 +4700,7 @@ end
 local m = SettingFarmMainSection.CreateToggle(
 	{ Title = "Auto Turn On V4", Desc = nil, Default = Settings["Auto Turn On V4"] or false },
 	function(I)
+		SaveSettings("Auto Turn On V4", I)
 		if I then
 			spawn(function()
 				while Settings["Auto Turn On V4"] and (task.wait(1)) do
@@ -4525,12 +4708,12 @@ local m = SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Turn On V4", I)
 	end
 )
 SettingFarmMainSection.CreateToggle(
 	{ Title = "Auto Turn On V3", Desc = nil, Default = Settings["Auto Turn On V3"] or false },
 	function(I)
+		SaveSettings("Auto Turn On V3", I)
 		if I then
 			spawn(function()
 				while Settings["Auto Turn On V3"] and (task.wait(1)) do
@@ -4539,7 +4722,6 @@ SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Turn On V3", I)
 	end
 )
 SettingFarmMainSection.CreateToggle(
@@ -4598,6 +4780,7 @@ SettingFarmMainSection.CreateSlider(
 SettingFarmMainSection.CreateToggle(
 	{ Title = "Tween Safe if have Items", Desc = nil, Default = Settings["Tween Safe if have Items"] or false },
 	function(I)
+		SaveSettings("Tween Safe if have Items", I)
 		if I then
 			spawn(function()
 				while Settings["Tween Safe if have Items"] and (wait(0.25)) do
@@ -4622,7 +4805,6 @@ SettingFarmMainSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Tween Safe if have Items", I)
 	end
 )
 SettingFarmMainSection.CreateSlider(
@@ -4888,25 +5070,42 @@ function DontQuest()
 	return Z.Data and Z.Data.QuestData ~= nil
 end
 function GetNameDoubleQuest()
-	local tqf = t.PlayerGui:FindFirstChild("TrackedQuestFrame")
-	if tqf and tqf.Enabled and tqf:FindFirstChild("Frame") then
-		local desc = tqf.Frame:FindFirstChild("description")
-		if desc and desc.Text and desc.Text ~= "" then
-			return desc.Text
-		end
-		local header = tqf.Frame:FindFirstChild("header")
-		local label = header and header:FindFirstChild("textLabel")
-		if label and label.Text and label.Text ~= "" then
-			local mob = label.Text:match("Defeat %d+ (.+)")
-			if mob then
-				return mob
+	if Z.Data and Z.Data.QuestData and Z.Data.QuestData.Task then
+		for C, J in next, Z.Data.QuestData.Task, nil do
+			if C and C ~= "" and not C:find("^Defeat %d+") then
+				return C
 			end
 		end
 	end
-	if DontQuest() and Z.Data and Z.Data.QuestData and Z.Data.QuestData.Task then
-		for C, J in next, Z.Data.QuestData.Task, nil do
-			return C
+	local tqf = t.PlayerGui:FindFirstChild("TrackedQuestFrame")
+	if tqf and tqf.Enabled and tqf:FindFirstChild("Frame") then
+		for _, lbl in ipairs(tqf.Frame:GetDescendants()) do
+			if lbl:IsA("TextLabel") and lbl.Text and lbl.Text ~= "" then
+				local mob = lbl.Text:match("Defeat %d+ (.-)%s*%(%d+/%d+%)")
+					or lbl.Text:match("Defeat %d+ (.-)$")
+				if mob and mob ~= "" then
+					if H then
+						for _, questData in pairs(H) do
+							for _, questEntry in pairs(questData) do
+								if questEntry.Task then
+									for taskMob, _ in pairs(questEntry.Task) do
+										if taskMob:lower() == mob:lower()
+											or taskMob:lower() == mob:lower():gsub("s$", "")
+											or (taskMob .. "s"):lower() == mob:lower() then
+											return taskMob
+										end
+									end
+								end
+							end
+						end
+					end
+					return mob
+				end
+			end
 		end
+	end
+	if getgenv().NameMobQuest and getgenv().NameMobQuest ~= "" then
+		return getgenv().NameMobQuest
 	end
 	return nil
 end
@@ -4919,6 +5118,38 @@ function GetQuestTitleText()
 		return (label and label.Text or "") .. " " .. (desc and desc.Text or "")
 	end
 	return ""
+end
+
+function GetCurrentQuestTitle()
+	local tqfText = GetQuestTitleText()
+	if tqfText and tqfText ~= "" then
+		return tqfText
+	end
+	local mq = t.PlayerGui:FindFirstChild("Main") and t.PlayerGui.Main:FindFirstChild("Quest")
+	local legacyTitle = mq and mq:FindFirstChild("Container") and mq.Container:FindFirstChild("QuestTitle") and mq.Container.QuestTitle:FindFirstChild("Title") and mq.Container.QuestTitle.Title.Text
+	if legacyTitle and legacyTitle ~= "" then
+		return legacyTitle
+	end
+	local dMob = GetNameDoubleQuest()
+	if dMob and dMob ~= "" then
+		return dMob
+	end
+	return ""
+end
+
+function HasCurrentQuestTarget(targetName)
+	if not targetName or not DontQuest() then
+		return false
+	end
+	local title = GetCurrentQuestTitle()
+	if title ~= "" and (string.find(title:lower(), targetName:lower()) or string.find(targetName:lower(), title:lower())) then
+		return true
+	end
+	local dMob = GetNameDoubleQuest()
+	if dMob and (string.find(dMob:lower(), targetName:lower()) or string.find(targetName:lower(), dMob:lower())) then
+		return true
+	end
+	return false
 end
 task.spawn(function()
 	while task.wait(0.2) do
@@ -5009,7 +5240,7 @@ local function GetQuestForLevel(C)
 							Level = n,
 							Name = r.NPCName,
 							QuestName = r.InternalQuestName,
-							Pos = r.Position,
+							Pos = r.Position or (getgenv().questpoint and getgenv().questpoint[r.InternalQuestName]),
 							Id = V,
 							Mob = u,
 						}
@@ -5046,7 +5277,7 @@ TakeQuestLevel = function()
 	if not B or not C then
 		return
 	end
-	if (H - B.Position).Magnitude <= 8 and C.Health > 0 then
+	if (H - B.Position).Magnitude <= 25 and C.Health > 0 then
 		CommF:InvokeServer("StartQuest", tostring(V.QuestName), V.Id)
 		task.wait(0.5)
 	else
@@ -5055,22 +5286,16 @@ TakeQuestLevel = function()
 end
 
 function DetectPartSpawnMob(V, H)
-	local function B(C)
-		return C:gsub(" %p?Lv%.? %d+%p?", "")
-	end
-	local C = string.find(V, "Lv.") and (B(V)) or V
 	for J, F in pairs(TableMobSpawn) do
 		if F:IsA("Part") then
-			J = string.find(F.Name, "Lv.") and (B(F.Name)) or F.Name
-			if (J == V or J == C) and (not H or not F:FindFirstChild("Ignored")) then
+			if (F.Name == V or MobNameMatches(F.Name, V)) and (not H or not F:FindFirstChild("Ignored")) then
 				return F
 			end
 		end
 	end
 	for J, F in pairs(workspace._WorldOrigin.EnemySpawns:GetChildren()) do
 		if F:IsA("Part") then
-			J = string.find(F.Name, "Lv.") and (B(F.Name)) or F.Name
-			if (J == V or J == C) and (not H or not F:FindFirstChild("Ignored")) then
+			if (F.Name == V or MobNameMatches(F.Name, V)) and (not H or not F:FindFirstChild("Ignored")) then
 				table.insert(TableMobSpawn, F)
 				return F
 			end
@@ -5078,8 +5303,7 @@ function DetectPartSpawnMob(V, H)
 	end
 	for J, F in pairs(getnilinstances()) do
 		if F:IsA("Part") then
-			J = string.find(F.Name, "Lv.") and (B(F.Name)) or F.Name
-			if (J == V or J == C) and (not H or not F:FindFirstChild("Ignored")) then
+			if (F.Name == V or MobNameMatches(F.Name, V)) and (not H or not F:FindFirstChild("Ignored")) then
 				table.insert(TableMobSpawn, F)
 				return F
 			end
@@ -5826,7 +6050,7 @@ BossRipIndraSection.CreateToggle(
 )
 BossRipIndraSection.CreateToggle(
 	{
-		Title = 'Hop Server Elite Hunter"',
+		Title = "Hop Server Elite Hunter",
 		Desc = "Hop if u have God chalice and teleport in safezone",
 		Default = Settings["Hop Server Elite Hunter"] or false,
 	},
@@ -5928,12 +6152,16 @@ BossDarkbeardSection.CreateToggle(
 	end
 )
 function GetPathFruit()
-	local f, V, Y = next, game.Workspace:GetChildren()
-	for H, H in f, V, Y do
-		if (H:IsA("Tool") or (H:IsA("Model"))) and (string.find(H.Name, "Fruit")) and (H:FindFirstChild("Handle")) then
-			return H
+	local ws = game:GetService("Workspace")
+	for _, item in ipairs(ws:GetChildren()) do
+		if (item:IsA("Tool") or item:IsA("Model")) and string.find(item.Name, "Fruit") then
+			local handle = item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart") or item.PrimaryPart
+			if handle then
+				return item
+			end
 		end
 	end
+	return nil
 end
 function GetPirateRaid(f)
 	for V, V in ipairs((if f then game.ReplicatedStorage else game.workspace.Enemies):GetChildren()) do
@@ -6124,8 +6352,8 @@ end
 function AutoQuestBarito()
 	if game.ReplicatedStorage.Remotes.CommF_:InvokeServer("BartiloQuestProgress", "Bartilo") == 0 then
 		if
-			string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, "Swan Pirates")
-			and (string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, "50"))
+			string.find(GetCurrentQuestTitle(), "Swan Pirates")
+			and (string.find(GetCurrentQuestTitle(), "50"))
 			and DontQuest()
 		then
 			local f, V = "Swan Pirate", DetectMob("Swan Pirate")
@@ -6723,13 +6951,7 @@ task.spawn(function()
 									if P then
 										StackFarm = false
 										StackFarmOther = false
-										if
-											not string.find(
-												game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text,
-												P.Name
-											)
-											or not DontQuest()
-										then
+										if not HasCurrentQuestTarget(P.Name) then
 											game:GetService("ReplicatedStorage").Remotes.CommF_
 												:InvokeServer("AbandonQuest")
 											game:GetService("ReplicatedStorage").Remotes.CommF_
@@ -6816,12 +7038,7 @@ task.spawn(function()
 				if y then
 					StackFarm = false
 					StackFarmOther = false
-					if
-						not string.find(
-							game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text,
-							y.Name
-						) or not DontQuest()
-					then
+					if not HasCurrentQuestTarget(y.Name) then
 						game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest")
 						game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("EliteHunter")
 					else
@@ -6896,13 +7113,24 @@ task.spawn(function()
 				if y then
 					StackFarm = false
 					StackFarmOther = false
-					if (y.Handle.Position - t.Character.HumanoidRootPart.Position).Magnitude <= 5 then
-						getgenv().noclip = false
-						game:GetService("VirtualInputManager"):SendKeyEvent(true, "Space", false, game)
-						wait()
-						game:GetService("VirtualInputManager"):SendKeyEvent(false, "Space", false, game)
-					else
-						toTarget(y.Handle.CFrame, true)
+					local handle = y:FindFirstChild("Handle") or y:FindFirstChildWhichIsA("BasePart") or y.PrimaryPart
+					local hrp = t.Character and t.Character:FindFirstChild("HumanoidRootPart")
+					if handle and hrp then
+						pcall(function()
+							if firetouchinterest then
+								firetouchinterest(hrp, handle, 0)
+								firetouchinterest(hrp, handle, 1)
+							end
+							handle.CFrame = hrp.CFrame
+						end)
+						if (handle.Position - hrp.Position).Magnitude <= 10 then
+							getgenv().noclip = false
+							game:GetService("VirtualInputManager"):SendKeyEvent(true, "Space", false, game)
+							task.wait(0.05)
+							game:GetService("VirtualInputManager"):SendKeyEvent(false, "Space", false, game)
+						else
+							toTarget(handle.CFrame, true)
+						end
 					end
 					return
 				elseif Settings["Teleport To Fruit [ Hop Server ]"] then
@@ -6940,6 +7168,7 @@ end
 EventEasterSection.CreateToggle(
 	{ Title = "Auto Collect Egg Easter", Desc = nil, Default = Settings["Auto Collect Egg Easter"] or false },
 	function(V)
+		SaveSettings("Auto Collect Egg Easter", V)
 		if V then
 			spawn(function()
 				while Settings["Auto Collect Egg Easter"] and (task.wait()) do
@@ -6958,13 +7187,13 @@ EventEasterSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Collect Egg Easter", V)
 	end
 )
 FishingSection = FarmotherMain.CreateSection("Fishing")
 FishingSection.CreateToggle(
 	{ Title = "Change Size Reel", Desc = nil, Default = Settings["Change Size Reel"] or false },
 	function(V)
+		SaveSettings("Change Size Reel", V)
 		if V then
 			spawn(function()
 				while Settings["Change Size Reel"] and (task.wait()) do
@@ -6977,7 +7206,6 @@ FishingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Change Size Reel", V)
 	end
 )
 FishingSection.CreateToggle(
@@ -6987,6 +7215,7 @@ FishingSection.CreateToggle(
 		Default = Settings["Auto Slap Battle"] or false,
 	},
 	function(V)
+		SaveSettings("Auto Slap Battle", V)
 		if V then
 			spawn(function()
 				while Settings["Auto Slap Battle"] and (task.wait()) do
@@ -7029,7 +7258,6 @@ FishingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Slap Battle", V)
 	end
 )
 _, R = Settings["Save Position Fishing"], "Position : "
@@ -7248,6 +7476,7 @@ end
 FishingSection.CreateToggle(
 	{ Title = "Auto Fishing", Desc = nil, Default = Settings["Auto Fishing"] or false },
 	function(X)
+		SaveSettings("Auto Fishing", X)
 		if X then
 			spawn(function()
 				while Settings["Auto Fishing"] and (task.wait()) do
@@ -7323,13 +7552,13 @@ FishingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Fishing", X)
 	end
 )
 local X = require(game.ReplicatedStorage.JobsReplicated)
 FishingSection.CreateToggle(
 	{ Title = "Auto Sell Fishing", Desc = nil, Default = Settings["Auto Sell Fishing"] or false },
 	function(_)
+		SaveSettings("Auto Sell Fishing", _)
 		if _ then
 			spawn(function()
 				while Settings["Auto Sell Fishing"] and (task.wait(0.2)) do
@@ -7342,12 +7571,12 @@ FishingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Sell Fishing", _)
 	end
 )
 FishingSection.CreateToggle(
 	{ Title = "Auto Open Chest", Desc = nil, Default = Settings["Auto Open Chest"] or false },
 	function(_)
+		SaveSettings("Auto Open Chest", _)
 		if _ then
 			spawn(function()
 				while Settings["Auto Open Chest"] and (task.wait(0.2)) do
@@ -7365,7 +7594,6 @@ FishingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Open Chest", _)
 	end
 )
 local _ = {}
@@ -7409,6 +7637,7 @@ FishingSection.CreateDropdown(
 FishingSection.CreateToggle(
 	{ Title = "Auto Accept Quest Fishing", Desc = nil, Default = Settings["Auto Accept Quest Fishing"] or false },
 	function(_)
+		SaveSettings("Auto Accept Quest Fishing", _)
 		if _ then
 			spawn(function()
 				while Settings["Auto Accept Quest Fishing"] and (task.wait()) do
@@ -7440,7 +7669,6 @@ FishingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Accept Quest Fishing", _)
 	end
 )
 QuestDragonSection = FarmotherMain.CreateSection("Quest Dragon")
@@ -7469,6 +7697,7 @@ end
 AttackAllMobSection.CreateToggle(
 	{ Title = "Auto Attack All Mob and Boss", Desc = nil, Default = Settings["Auto Attack All Mob and Boss"] or false },
 	function(X)
+		SaveSettings("Auto Attack All Mob and Boss", X)
 		spawn(function()
 			while Settings["Auto Attack All Mob and Boss"] and (wait()) do
 				local _, _ = pcall(function()
@@ -7494,7 +7723,6 @@ AttackAllMobSection.CreateToggle(
 				end
 			end
 		end)
-		SaveSettings("Auto Attack All Mob and Boss", X)
 	end
 )
 local X, _ = { "PirateBrigade", "PirateGrandBrigade" }, { "Fish Crew Member", "Shark" }
@@ -7683,17 +7911,30 @@ function AutoQuestDojo()
 					wait(0.5)
 				end
 				getgenv().RoughSea = V
-				Y = CFrame.new(-32975.9921875, P.WorldPivot.Y, 25963.7109375)
-					* CFrame.new(0, P.WorldPivot.Y, 0 + RoughSea)
+				Y = CFrame.new(-32975.9921875, 10, 25963.7109375 + RoughSea)
 				if not t.Character.Humanoid.Sit then
-					toTarget(P.VehicleSeat.CFrame)
+					toTarget(P.VehicleSeat.CFrame * CFrame.new(0, 1, 0))
+					task.wait(0.08)
+					if not t.Character.Humanoid.Sit and t.Character.Humanoid.Health > 0 then
+						pcall(function() P.VehicleSeat:Sit(t.Character.Humanoid) end)
+					end
 				else
 					manageTween(P.VehicleSeat, Y, 350, "TweenBoat")
 				end
 			end
 		else
+			pcall(function()
+				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
+					t.Character.Humanoid.Sit = false
+				end
+			end)
 			repeat
 				task.wait()
+				pcall(function()
+					if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+						t.Character.Humanoid.Sit = false
+					end
+				end)
 				TeleportSeaEvents(y)
 				local P = y:FindFirstChild("HumanoidRootPart") or (y:FindFirstChild("Engine"))
 				getgenv().AimPos = CFrame.new(P.Position.X, 40, P.Position.Z)
@@ -7720,10 +7961,7 @@ function AutoQuestDojo()
 		local y = DetectEliteHunter()
 		if y then
 			StackFarm = false
-			if
-				not string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, y.Name)
-				or not DontQuest()
-			then
+			if not HasCurrentQuestTarget(y.Name) then
 				game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest")
 				game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("EliteHunter")
 			else
@@ -7785,10 +8023,13 @@ function AutoQuestDojo()
 					wait(0.5)
 				end
 				getgenv().RoughSea = V
-				P = CFrame.new(-32975.9921875, y.WorldPivot.Y, 25963.7109375)
-					* CFrame.new(0, y.WorldPivot.Y, 0 + RoughSea)
+				P = CFrame.new(-32975.9921875, 10, 25963.7109375 + RoughSea)
 				if not t.Character.Humanoid.Sit then
-					toTarget(y.VehicleSeat.CFrame)
+					toTarget(y.VehicleSeat.CFrame * CFrame.new(0, 1, 0))
+					task.wait(0.08)
+					if not t.Character.Humanoid.Sit and t.Character.Humanoid.Health > 0 then
+						pcall(function() y.VehicleSeat:Sit(t.Character.Humanoid) end)
+					end
 				else
 					manageTween(y.VehicleSeat, P, 350, "TweenBoat")
 				end
@@ -7814,17 +8055,30 @@ function AutoQuestDojo()
 					wait(0.5)
 				end
 				getgenv().RoughSea = V
-				Y = CFrame.new(-32975.9921875, P.WorldPivot.Y, 25963.7109375)
-					* CFrame.new(0, P.WorldPivot.Y, 0 + RoughSea)
+				Y = CFrame.new(-32975.9921875, 10, 25963.7109375 + RoughSea)
 				if not t.Character.Humanoid.Sit then
-					toTarget(P.VehicleSeat.CFrame)
+					toTarget(P.VehicleSeat.CFrame * CFrame.new(0, 1, 0))
+					task.wait(0.08)
+					if not t.Character.Humanoid.Sit and t.Character.Humanoid.Health > 0 then
+						pcall(function() P.VehicleSeat:Sit(t.Character.Humanoid) end)
+					end
 				else
 					manageTween(P.VehicleSeat, Y, 350, "TweenBoat")
 				end
 			end
 		else
+			pcall(function()
+				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
+					t.Character.Humanoid.Sit = false
+				end
+			end)
 			repeat
 				task.wait()
+				pcall(function()
+					if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+						t.Character.Humanoid.Sit = false
+					end
+				end)
 				TeleportSeaEvents(y)
 				local P = y:FindFirstChild("HumanoidRootPart")
 				getgenv().AimPos = CFrame.new(P.Position.X, 40, P.Position.Z)
@@ -7845,6 +8099,7 @@ end
 QuestDragonSection.CreateToggle(
 	{ Title = "Auto Quest Dojo Trainer", Desc = nil, Default = Settings["Auto Quest Dojo Trainer"] or false },
 	function(y)
+		SaveSettings("Auto Quest Dojo Trainer", y)
 		if y then
 			spawn(function()
 				while Settings["Auto Quest Dojo Trainer"] and (task.wait()) do
@@ -7857,7 +8112,6 @@ QuestDragonSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Quest Dojo Trainer", y)
 	end
 )
 game:GetService("Players").LocalPlayer.PlayerGui.Notifications.ChildAdded:Connect(function(y)
@@ -8061,6 +8315,7 @@ end
 QuestDragonSection.CreateToggle(
 	{ Title = "Auto Quest Dragon Hunter", Desc = nil, Default = Settings["Auto Quest Dragon Hunter"] or false },
 	function(y)
+		SaveSettings("Auto Quest Dragon Hunter", y)
 		if y then
 			spawn(function()
 				while Settings["Auto Quest Dragon Hunter"] and (task.wait(0.1)) do
@@ -8073,7 +8328,6 @@ QuestDragonSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Quest Dragon Hunter", y)
 	end
 )
 function DetectBerryCFrame(y)
@@ -8132,6 +8386,7 @@ BerrySection.CreateToggle(
 BerrySection.CreateToggle(
 	{ Title = "Auto Collect Berry", Desc = nil, Default = Settings["Auto Collect Berry"] or false },
 	function(y)
+		SaveSettings("Auto Collect Berry", y)
 		if y then
 			spawn(function()
 				while Settings["Auto Collect Berry"] and (task.wait(0.1)) do
@@ -8159,7 +8414,6 @@ BerrySection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Collect Berry", y)
 	end
 )
 FarmChestSection = FarmotherMain.CreateSection("Farm Chest")
@@ -8261,6 +8515,7 @@ FarmChestSection.CreateToggle(
 FarmChestSection.CreateToggle(
 	{ Title = "Auto Chest", Desc = nil, Default = Settings["Auto Chest"] or false },
 	function(y)
+		SaveSettings("Auto Chest", y)
 		if y then
 			spawn(function()
 				while Settings["Auto Chest"] and (task.wait(0.1)) do
@@ -8273,13 +8528,13 @@ FarmChestSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Chest", y)
 	end
 )
 RaidLawSection = FarmotherMain.CreateSection("Raid Law")
 RaidLawSection.CreateToggle(
 	{ Title = "Auto Buy Chip and Attack Law", Desc = nil, Default = Settings["Auto Buy Chip and Attack Law"] or false },
 	function(y)
+		SaveSettings("Auto Buy Chip and Attack Law", y)
 		if y then
 			spawn(function()
 				while Settings["Auto Buy Chip and Attack Law"] and (task.wait()) do
@@ -8317,7 +8572,6 @@ RaidLawSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Buy Chip and Attack Law", y)
 	end
 )
 FarmObservationSection = FarmotherMain.CreateSection("Farm Observation")
@@ -8351,8 +8605,8 @@ end
 function ObservationV2()
 	if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CitizenQuestProgress", "Citizen") == 0 then
 		if
-			string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, "Forest Pirate")
-			and (string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, "50"))
+			string.find(GetCurrentQuestTitle(), "Forest Pirate")
+			and (string.find(GetCurrentQuestTitle(), "50"))
 			and DontQuest()
 		then
 			local y = DetectMob("Forest Pirate")
@@ -8412,10 +8666,10 @@ function ObservationV2()
 	elseif game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CitizenQuestProgress", "Citizen") == 1 then
 		if
 			string.find(
-				game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text,
+				GetCurrentQuestTitle(),
 				"Captain Elephant"
 			)
-			and (string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, "1"))
+			and (string.find(GetCurrentQuestTitle(), "1"))
 			and DontQuest()
 		then
 			local y = CheckNameBoss("Captain Elephant")
@@ -8506,6 +8760,7 @@ end
 FarmObservationSection.CreateToggle(
 	{ Title = "Auto UP Observation V2", Desc = nil, Default = Settings["Auto UP Observation V2"] or false },
 	function(y)
+		SaveSettings("Auto UP Observation V2", y)
 		if y then
 			spawn(function()
 				while Settings["Auto UP Observation V2"] and (wait(0.1)) do
@@ -8515,12 +8770,12 @@ FarmObservationSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto UP Observation V2", y)
 	end
 )
 FarmObservationSection.CreateToggle(
 	{ Title = "Farm Observation", Desc = nil, Default = Settings["Farm Observation"] or false },
 	function(y)
+		SaveSettings("Farm Observation", y)
 		if y then
 			spawn(function()
 				while Settings["Farm Observation"] and (wait(0.1)) do
@@ -8530,7 +8785,6 @@ FarmObservationSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Farm Observation", y)
 	end
 )
 FarmObservationSection.CreateToggle(
@@ -8650,6 +8904,7 @@ function FarmSelectMob()
 	end
 end
 AutoKillMobSection.CreateToggle({ Title = "Kill Mob", Desc = nil, Default = Settings["Kill Mob"] or false }, function(y)
+	SaveSettings("Kill Mob", y)
 	if y then
 		spawn(function()
 			while Settings["Kill Mob"] and (task.wait(0.1)) do
@@ -8662,7 +8917,6 @@ AutoKillMobSection.CreateToggle({ Title = "Kill Mob", Desc = nil, Default = Sett
 			end
 		end)
 	end
-	SaveSettings("Kill Mob", y)
 end)
 AutoKillBossSection = FarmotherMain.CreateSection("Auto Boss")
 local y = {
@@ -8759,6 +9013,7 @@ end
 AutoKillBossSection.CreateToggle(
 	{ Title = "Kill Boss", Desc = nil, Default = Settings["Kill Boss"] or false },
 	function(y)
+		SaveSettings("Kill Boss", y)
 		spawn(function()
 			while Settings["Kill Boss"] and (wait()) do
 				pcall(function()
@@ -8766,7 +9021,6 @@ AutoKillBossSection.CreateToggle(
 				end)
 			end
 		end)
-		SaveSettings("Kill Boss", y)
 	end
 )
 AutoKillBossSection.CreateToggle(
@@ -8796,6 +9050,12 @@ DevilFruitSection.CreateToggle(
 	{ Title = "Auto Store Fruit", Desc = nil, Default = Settings["Auto Store Fruit"] or false },
 	function(y)
 		SaveSettings("Auto Store Fruit", y)
+	end
+)
+DevilFruitSection.CreateToggle(
+	{ Title = "Teleport To Fruit", Desc = nil, Default = Settings["Teleport To Fruit"] or false },
+	function(y)
+		SaveSettings("Teleport To Fruit", y)
 	end
 )
 DevilFruitSection.CreateDropdown(
@@ -8975,6 +9235,7 @@ getgenv().CheckIsplayingRaid = function()
 end
 getgenv().buychip = true
 RaidsSection.CreateToggle({ Title = "Auto Raid", Desc = nil, Default = Settings["Auto Raid"] or false }, function(b)
+	SaveSettings("Auto Raid", b)
 	if b then
 		spawn(function()
 			while Settings["Auto Raid"] and (task.wait()) do
@@ -9095,7 +9356,6 @@ RaidsSection.CreateToggle({ Title = "Auto Raid", Desc = nil, Default = Settings[
 			end
 		end)
 	end
-	SaveSettings("Auto Raid", b)
 end)
 RaidsSection.CreateToggle(
 	{ Title = "Hop Sever Raid", Desc = nil, Default = Settings["Hop Sever Raid"] or false },
@@ -9274,6 +9534,7 @@ end
 MultiRaidsSection.CreateToggle(
 	{ Title = "Auto Multi Raid", Desc = nil, Default = Settings["Auto Multi Raid"] or false },
 	function(b)
+		SaveSettings("Auto Multi Raid", b)
 		if b then
 			spawn(function()
 				while Settings["Auto Multi Raid"] and (task.wait(0.1)) do
@@ -9286,37 +9547,12 @@ MultiRaidsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Multi Raid", b)
 	end
 )
-local b = require(game:GetService("ReplicatedStorage").Controllers.BannerClient)
-local function E()
-	local l = b.TryGetBannerItemIfActiveAsync()
-	if l and l.BoxName then
-		return l.BoxName, l
-	end
-	return "DLCBoxData", nil
-end
-local function b()
-	local l, y = game:GetService("ReplicatedStorage").Remotes.CommF_, E()
-	local E, P, Y = l:InvokeServer("Cousin", "Check", y)
-	if (P or 0) < 50 then
-		warn("Ch\198\176a Lv50")
-		return false
-	end
-	if (E or 0) < (Y or 1 / 0) then
-		return false
-	end
-	if l:InvokeServer("Cousin", "CheckTime", y) ~= true then
-		return false
-	end
-	if l:InvokeServer("Cousin", y) == 1 then
-		return true
-	end
-	return false
-end
 function RandomFruit()
-	b()
+	pcall(function()
+		game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Cousin", "Buy")
+	end)
 end
 function DetectCountDF()
 	local b = getbackpack()
@@ -9335,25 +9571,26 @@ function DetectCountDF()
 end
 local b = require(game:GetService("ReplicatedStorage").FruitInfo)
 function StoreFruit(E)
+	if not E then return end
 	for l, y in pairs(E:GetChildren()) do
-		if y:IsA("Tool") and (string.find(y.Name, "Fruit")) and not y:FindFirstChild("Ignored") then
-			l = string.gsub(y.Name, " Fruit", "")
-			local E
-			E = y:GetAttribute("OriginalName") or l .. "-" .. l
+		if y:IsA("Tool") and (string.find(y.Name, "Fruit") or y:FindFirstChild("EatRemote", true)) and not y:FindFirstChild("Ignored") then
+			local l = string.gsub(y.Name, " Fruit", "")
+			local orig = y:GetAttribute("OriginalName") or (l .. "-" .. l)
 			pcall(function()
-				game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StoreFruit", E, y)
+				game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StoreFruit", orig, y)
 			end)
-			local l = Instance.new("IntValue")
-			l.Name = "Ignored"
-			l.Parent = y
+			local tag = Instance.new("IntValue")
+			tag.Name = "Ignored"
+			tag.Parent = y
 			if
 				Settings["Webhook Store Fruit"]
 				and Settings["Select Rarity Fruit"]
-				and (b.List[E] and Settings["Select Rarity Fruit"][b.List[E].Rarity.Name] or SkinFruit[y.Name])
+				and b and b.List
+				and (b.List[orig] and Settings["Select Rarity Fruit"][b.List[orig].Rarity.Name] or SkinFruit[y.Name])
 			then
-				getgenv().WebhookStoreFruit(y.Name)
+				pcall(function() getgenv().WebhookStoreFruit(y.Name) end)
 			end
-			task.wait(2)
+			task.wait(0.3)
 		end
 	end
 end
@@ -9446,6 +9683,7 @@ DungeonJoinSection.CreateToggle(
 DungeonJoinSection.CreateToggle(
 	{ Title = "Auto Join Dungeon", Desc = "Auto Join Dungeon", Default = Settings["Auto Join Dungeon"] or false },
 	function(b)
+		SaveSettings("Auto Join Dungeon", b)
 		spawn(function()
 			while Settings["Auto Join Dungeon"] and (task.wait()) do
 				local E, E = pcall(function()
@@ -9492,7 +9730,6 @@ DungeonJoinSection.CreateToggle(
 				end
 			end
 		end)
-		SaveSettings("Auto Join Dungeon", b)
 	end
 )
 DungeonSection = DFRaidMain.CreateSection("Dungeon")
@@ -10029,6 +10266,7 @@ SettingSeaEventSection.CreateToggle(
 		Default = Settings["Auto Dodge Skill Seabeast"] or false,
 	},
 	function(l)
+		SaveSettings("Auto Dodge Skill Seabeast", l)
 		if l then
 			spawn(function()
 				while Settings["Auto Dodge Skill Seabeast"] and (task.wait(0.15)) do
@@ -10052,7 +10290,6 @@ SettingSeaEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Dodge Skill Seabeast", l)
 	end
 )
 SettingSeaEventSection.CreateToggle(
@@ -10073,6 +10310,19 @@ SettingSeaEventSection.CreateToggle(
 	},
 	function(l)
 		SaveSettings("Tween Until Have Sea Event", l)
+		if l then
+			getgenv().StopBoatSeaEvent = true
+			task.spawn(function()
+				while Settings["Tween Until Have Sea Event"] and task.wait() do
+					pcall(function()
+						AutoSeabeast()
+					end)
+				end
+			end)
+		elseif not Settings["Auto Sea Event"] then
+			if type(y) == "function" then y() end
+			getgenv().StopBoatSeaEvent = false
+		end
 	end
 )
 SettingSeaEventSection.CreateToggle(
@@ -10081,165 +10331,259 @@ SettingSeaEventSection.CreateToggle(
 		SaveSettings("Will Back When over 10km", l)
 	end
 )
-local function l(y)
-	local P = t and t.Character
-	if not P then
-		return
-	end
-	for Y, Y in ipairs(P:GetDescendants()) do
-		if Y:IsA("BasePart") then
-			Y.CanCollide = not y
-		end
-	end
-end
-local y, P, Y = setmetatable({}, { __mode = "k" }), 0, getgenv().BoatSpeed
-if type(Y) ~= "table" then
-	Y = { cap = 100, ceiling = 1 / 0, nextRaise = 0 }
-	getgenv().BoatSpeed = Y
-end
-local H = 5
-local function C()
-	local J, F = pcall(function()
-		return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+-- [[ Enhanced High-Performance Boat Tween & Noclip Engine ]]
+local ActiveBoatTweens = setmetatable({}, { __mode = "k" })
+local ActiveBoatCount = 0
+local BoatNoclipConnection = nil
+
+local function EnableBoatNoclip()
+	if BoatNoclipConnection then return end
+	local RunService = game:GetService("RunService")
+	BoatNoclipConnection = RunService.Stepped:Connect(function()
+		pcall(function()
+			-- Noclip all active boats so they pass smoothly through rocks and terrain
+			for seat, _ in pairs(ActiveBoatTweens) do
+				if seat and seat.Parent then
+					local boat = seat:FindFirstAncestorOfClass("Model") or seat.Parent
+					if boat then
+						for _, part in ipairs(boat:GetDescendants()) do
+							if part:IsA("BasePart") and part.CanCollide then
+								part.CanCollide = false
+							end
+						end
+					end
+				end
+			end
+		end)
 	end)
-	return J and F / 1000 or 0.1
 end
+
+local function DisableBoatNoclip()
+	if BoatNoclipConnection then
+		BoatNoclipConnection:Disconnect()
+		BoatNoclipConnection = nil
+	end
+end
+
+function NoclipBoat(boat)
+	if not boat then return end
+	pcall(function()
+		for _, part in ipairs(boat:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then
+				part.CanCollide = false
+			end
+		end
+	end)
+end
+
+function TurnOffNoclipBoat(boat)
+	if not boat then return end
+	pcall(function()
+		for _, part in ipairs(boat:GetDescendants()) do
+			if part:IsA("BasePart") and not part.CanCollide then
+				part.CanCollide = true
+			end
+		end
+	end)
+end
+
 function manageTween(J, F, q, c)
 	if not J or not J:IsA("BasePart") or typeof(F) ~= "CFrame" then
 		return
 	end
-	q, c = math.max(tonumber(Settings["Value Speed Tween Boat"]) or (tonumber(q)) or 350, 1), c or "TweenBoat"
-	if not y[J] and (J.Position - F.Position).Magnitude <= H then
+	local speed = math.max(tonumber(Settings["Value Speed Tween Boat"]) or tonumber(Settings["Value Speed Boat"]) or tonumber(q) or 350, 50)
+	c = c or "TweenBoat"
+
+	local boat = J:FindFirstAncestorOfClass("Model") or J.Parent
+	local currentCF = J.CFrame
+	local deltaInit = F.Position - currentCF.Position
+	local distToGoal = Vector2.new(deltaInit.X, deltaInit.Z).Magnitude
+	if distToGoal <= 20 then
 		return
 	end
-	local D = y[J]
-	if D and D.TweenKey == c and D.PlaybackState == Enum.PlaybackState.Playing then
-		D.Target = F
-		D.Speed = q
-		getgenv()[c] = D
-		return D
+
+	local existing = ActiveBoatTweens[J]
+	if existing and existing.TweenKey == c and existing.PlaybackState == Enum.PlaybackState.Playing then
+		existing.Target = F
+		existing.Speed = speed
+		getgenv()[c] = existing
+		return existing
 	end
-	if D then
-		D:Cancel()
+
+	if existing then
+		existing:Cancel()
 	end
-	local D = getgenv()[c]
-	if D then
-		pcall(function()
-			D:Cancel()
-		end)
+
+	local globalExisting = getgenv()[c]
+	if globalExisting and type(globalExisting.Cancel) == "function" then
+		pcall(function() globalExisting:Cancel() end)
 	end
-	local D, r, n, u, W =
-		{ PlaybackState = Enum.PlaybackState.Playing, Speed = q, Target = F, TweenKey = c },
-		false,
-		false,
-		false,
-		J.CFrame
-	local function F(q)
-		if u then
-			return
+
+	local isCancelled = false
+	local isPaused = false
+	local isDone = false
+
+	local tweenObj = {
+		PlaybackState = Enum.PlaybackState.Playing,
+		Speed = speed,
+		Target = F,
+		TweenKey = c,
+	}
+
+	-- Add BodyVelocity anchor to eliminate wave buoyancy bounce
+	local bodyVel = J:FindFirstChild("BoatTweenBV")
+	if not bodyVel then
+		bodyVel = Instance.new("BodyVelocity")
+		bodyVel.Name = "BoatTweenBV"
+		bodyVel.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+		bodyVel.Velocity = Vector3.zero
+		bodyVel.Parent = J
+	end
+
+	local function finish(state)
+		if isDone then return end
+		isDone = true
+		tweenObj.PlaybackState = state
+		ActiveBoatCount = math.max(ActiveBoatCount - 1, 0)
+		if ActiveBoatTweens[J] == tweenObj then
+			ActiveBoatTweens[J] = nil
 		end
-		u = true
-		D.PlaybackState = q
-		P = math.max(P - 1, 0)
-		if y[J] == D then
-			y[J] = nil
-		end
-		if getgenv()[c] == D then
+		if getgenv()[c] == tweenObj then
 			getgenv()[c] = nil
 		end
-		if P == 0 and not (type(ToggleNoclip) == "function" and ToggleNoclip() == true) then
-			l(false)
-			getgenv().noclip = false
+		if bodyVel and bodyVel.Parent then
+			pcall(function() bodyVel:Destroy() end)
+		end
+		if ActiveBoatCount == 0 then
+			DisableBoatNoclip()
 		end
 	end
-	D.Play = function(q)
-		if u then
-			return
-		end
-		n = false
-		q.PlaybackState = Enum.PlaybackState.Playing
+
+	tweenObj.Play = function()
+		if isDone then return end
+		isPaused = false
+		tweenObj.PlaybackState = Enum.PlaybackState.Playing
 	end
-	D.Pause = function(q)
-		if u then
-			return
-		end
-		n = true
-		q.PlaybackState = Enum.PlaybackState.Paused
+
+	tweenObj.Pause = function()
+		if isDone then return end
+		isPaused = true
+		tweenObj.PlaybackState = Enum.PlaybackState.Paused
 	end
-	D.Cancel = function(q)
-		if u then
-			return
-		end
-		r = true
-		F(Enum.PlaybackState.Cancelled)
+
+	tweenObj.Cancel = function()
+		if isDone then return end
+		isCancelled = true
+		finish(Enum.PlaybackState.Cancelled)
 	end
-	D.Destroy = function(q)
-		q:Cancel()
+
+	tweenObj.Destroy = function(self)
+		self:Cancel()
 	end
-	y[J] = D
-	getgenv()[c] = D
-	P += 1
-	l(true)
-	getgenv().noclip = true
+
+	ActiveBoatTweens[J] = tweenObj
+	getgenv()[c] = tweenObj
+	ActiveBoatCount = ActiveBoatCount + 1
+	EnableBoatNoclip()
+
 	task.spawn(function()
-		while not r and not u and J.Parent do
-			local l = x.Heartbeat:Wait()
-			if not n then
-				local y = t.Character and (t.Character:FindFirstChildOfClass("Humanoid"))
-				if not y or y.SeatPart ~= J then
-					WarnOnce(
-						"BoatNotSeated",
-						"Chua ngoi tren ghe thuyen nen server khong nhan vi tri tween. Da dung tween."
-					)
-					F(Enum.PlaybackState.Cancelled)
+		local RunService = game:GetService("RunService")
+		local unseatedTime = 0
+
+		while not isCancelled and not isDone and J.Parent do
+			local dt = RunService.Heartbeat:Wait()
+			if not isPaused then
+				local player = game:GetService("Players").LocalPlayer
+				local char = player and player.Character
+				local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+				-- Cancel immediately if character died or reset
+				if not humanoid or humanoid.Health <= 0 then
+					finish(Enum.PlaybackState.Cancelled)
 					break
 				end
-				local y, P = math.min(D.Speed, Y.cap), D.Target
-				local q, c = (P.Position - W.Position).Magnitude, y * l
-				if (J.Position - W.Position).Magnitude > math.max(20, c * 3) then
-					Y.ceiling = y * 0.9
-					Y.cap = math.max(y * 0.7, 40)
-					Y.nextRaise = tick() + math.max(C() * 4, 1)
-					W = J.CFrame
-					c, q = Y.cap * l, (P.Position - W.Position).Magnitude
-				elseif q > c and Y.cap <= D.Speed and Y.cap < Y.ceiling and tick() >= Y.nextRaise then
-					Y.cap = math.min(Y.cap * 1.08, Y.ceiling)
-					Y.nextRaise = tick() + math.max(C() * 4, 1)
+
+				-- Check seating
+				if humanoid.SeatPart ~= J then
+					unseatedTime = unseatedTime + dt
+					if unseatedTime > 3.0 then
+						finish(Enum.PlaybackState.Cancelled)
+						break
+					end
+				else
+					unseatedTime = 0
 				end
-				if q <= c or q <= H then
-					W = P
-					J.CFrame = P
-					J.AssemblyLinearVelocity = Vector3.new(0.0, 0.0, 0.0)
-					J.AssemblyAngularVelocity = Vector3.new(0.0, 0.0, 0.0)
-					F(Enum.PlaybackState.Completed)
+
+				local targetCF = tweenObj.Target
+				local currentPos = J.Position
+				-- Safe cruise elevation clamped to natural boat waterline
+				local cruiseY = math.clamp(currentPos.Y, 9, 14)
+				local targetPos = Vector3.new(targetCF.Position.X, cruiseY, targetCF.Position.Z)
+				local delta = targetPos - currentPos
+				local horizDist = Vector2.new(delta.X, delta.Z).Magnitude
+
+				local currentSpeed = tweenObj.Speed
+				local step = currentSpeed * dt
+
+				-- Zero physics velocity on boat
+				pcall(function()
+					J.AssemblyLinearVelocity = Vector3.zero
+					J.AssemblyAngularVelocity = Vector3.zero
+					if boat and boat.PrimaryPart and boat.PrimaryPart ~= J then
+						boat.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+						boat.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
+					end
+				end)
+
+				if horizDist <= math.max(25, step) then
+					local finalCF = CFrame.new(targetPos)
+					pcall(function()
+						J.CFrame = finalCF
+					end)
+					finish(Enum.PlaybackState.Completed)
 					break
 				end
-				W = W:Lerp(P, c / q)
-				J.CFrame = W
-				J.AssemblyLinearVelocity = Vector3.new(0.0, 0.0, 0.0)
-				J.AssemblyAngularVelocity = Vector3.new(0.0, 0.0, 0.0)
+
+				-- Compute next step with forward-facing orientation
+				local dir = delta.Unit
+				local nextPos = currentPos + dir * math.min(step, horizDist)
+				local lookDir = Vector3.new(dir.X, 0, dir.Z)
+				local nextCF
+				if lookDir.Magnitude > 0.001 then
+					nextCF = CFrame.lookAt(nextPos, nextPos + lookDir.Unit)
+				else
+					nextCF = CFrame.new(nextPos)
+				end
+
+				pcall(function()
+					J.CFrame = nextCF
+				end)
 			end
 		end
-		if not u then
-			F(Enum.PlaybackState.Cancelled)
+
+		if not isDone then
+			finish(Enum.PlaybackState.Cancelled)
 		end
 	end)
-	return D
+
+	return tweenObj
 end
-local function l(y, P, Y)
-	if not (y and (y:FindFirstChild("VehicleSeat"))) then
-		return
-	end
-	return manageTween(y.VehicleSeat, P, Y or 350, "TweenBoat")
+
+local function l(boat, targetCF, speed)
+	if not boat then return end
+	local seat = boat:FindFirstChild("VehicleSeat") or (boat:IsA("BasePart") and boat)
+	if not seat then return end
+	return manageTween(seat, targetCF, speed or 350, "TweenBoat")
 end
+
 local function y()
-	local P = getgenv().TweenBoat
-	if P then
-		pcall(function()
-			P:Cancel()
-		end)
+	for _, key in ipairs({ "TweenBoat", "TweenBoatBack", "TweenBoatToFrozen" }) do
+		local tween = getgenv()[key]
+		if tween and type(tween.Cancel) == "function" then
+			pcall(function() tween:Cancel() end)
+		end
+		getgenv()[key] = nil
 	end
-	getgenv().TweenBoat = nil
 end
 function SpinBoat()
 	local P = checkboat()
@@ -10252,7 +10596,7 @@ function SpinBoat()
 	then
 		RoughSeaSpin = Settings["Teleport Boat Other CFrame if Rough Sea"] and V or 0
 		local Y, H =
-			SelectedZoneCFrame() * CFrame.new(0, P.WorldPivot.Y, 0 + RoughSeaSpin) * CFrameSpinBoat[NumberSpinBoat],
+			SelectedZoneCFrame() * CFrame.new(0, 22, 0 + RoughSeaSpin) * CFrameSpinBoat[NumberSpinBoat],
 			tick()
 		local C = l(P, Y, 300)
 		repeat
@@ -10289,9 +10633,24 @@ function BuyBoatAndTeleBoat(P)
 		toTarget(game:GetService("Players")[Settings["Select Friend"]].Character.HumanoidRootPart.CFrame)
 		return
 	end
-	if not Settings["Auto Sea Event"] and not P then
+	if not Settings["Auto Sea Event"] and not Settings["Tween Until Have Sea Event"] and not P then
 		return
 	end
+
+	local function EnsureSeated(seat)
+		local char = t.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not hum or hum.Health <= 0 then return false end
+		if hum.SeatPart == seat then return true end
+
+		toTarget(seat.CFrame * CFrame.new(0, 1, 0))
+		task.wait(0.08)
+		if hum.SeatPart ~= seat and hum.Health > 0 then
+			pcall(function() seat:Sit(hum) end)
+		end
+		return hum.SeatPart == seat
+	end
+
 	if not Y or Y and t:DistanceFromCharacter(Y.VehicleSeat.Position) >= 4000 then
 		local H = CFrame.new(-13.488054275512695, 10.311711311340332, 2927.692)
 		H = if game.PlaceId == getgenv().CheckPlaceId
@@ -10308,7 +10667,12 @@ function BuyBoatAndTeleBoat(P)
 							game:GetService("Players").LocalPlayer.Data.LastSpawnPoint.Value == "Tiki"
 							or game:GetService("Players").LocalPlayer.Data.LastSpawnPoint.Value == "Tiki2"
 						then
-							t.Character.Humanoid.Health = 0
+							pcall(function()
+								if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
+									t.Character.Humanoid.Sit = false
+									t.Character.Humanoid.Health = 0
+								end
+							end)
 							return
 						end
 					end
@@ -10330,15 +10694,27 @@ function BuyBoatAndTeleBoat(P)
 		task.spawn(function()
 			NoclipBoat(Y)
 		end)
+		local currentSeatPos = Y.VehicleSeat.Position
+		local cruiseY = math.clamp(currentSeatPos.Y, 9, 14)
+		local distFromTiki = (Vector2.new(currentSeatPos.X, currentSeatPos.Z) - Vector2.new(-16132.5, 435.0)).Magnitude
+
 		if Settings["Tween Until Have Sea Event"] then
-			local H = CFrame.new(-118834.515625, Y.WorldPivot.Y, 999920.0494155884)
-			if not t.Character.Humanoid.Sit then
-				toTarget(Y.VehicleSeat.CFrame)
+			local targetDest
+			-- If near Tiki Outpost harbor, route through Zone 1 waypoint to safely clear island cliffs
+			if distFromTiki < 3500 and Settings["Select Zone"] ~= "Zone 1" then
+				targetDest = CFrame.new(-21767.4765625, cruiseY, 5815.41259765625)
 			else
-				l(Y, H, 350)
+				local zoneCF = SelectedZoneCFrame()
+				local targetX = zoneCF.Position.X
+				local targetZ = math.max(zoneCF.Position.Z, 25963) + 30000
+				targetDest = CFrame.new(targetX, cruiseY, targetZ)
 			end
+			if not EnsureSeated(Y.VehicleSeat) then
+				return
+			end
+			l(Y, targetDest, 350)
 		else
-			local H, C = CFrame.new(654.3875732421875, Y.WorldPivot.Y, 6321.95947265625), DecectPartRoughSea()
+			local H, C = CFrame.new(654.3875732421875, cruiseY, 6321.95947265625), DecectPartRoughSea()
 			if C then
 				task.wait(1)
 				V = if V == 0 then 7000 else 0
@@ -10346,16 +10722,24 @@ function BuyBoatAndTeleBoat(P)
 				task.wait(0.5)
 			end
 			getgenv().RoughSea = Settings["Teleport Boat Other CFrame if Rough Sea"] and V or 0
-			H = if game.PlaceId == getgenv().CheckPlaceId
-				then SelectedZoneCFrame() * CFrame.new(0, Y.WorldPivot.Y, 0 + RoughSea)
-				else H
-			if (Y.VehicleSeat.Position - H.Position).Magnitude > 200 then
-				C = CFrame.new(H.Position.X, Y.WorldPivot.Y, H.Position.Z)
-				if not t.Character.Humanoid.Sit then
-					toTarget(Y.VehicleSeat.CFrame)
-				else
-					l(Y, C, 350)
+			if game.PlaceId == getgenv().CheckPlaceId then
+				local zoneCF = SelectedZoneCFrame()
+				H = CFrame.new(zoneCF.Position.X, cruiseY, zoneCF.Position.Z + RoughSea)
+			end
+
+			local targetDest
+			if distFromTiki < 3500 and Settings["Select Zone"] ~= "Zone 1" then
+				targetDest = CFrame.new(-21767.4765625, cruiseY, 5815.41259765625)
+			else
+				targetDest = H
+			end
+
+			local distToDest = (Vector2.new(currentSeatPos.X, currentSeatPos.Z) - Vector2.new(targetDest.Position.X, targetDest.Position.Z)).Magnitude
+			if distToDest > 100 then
+				if not EnsureSeated(Y.VehicleSeat) then
+					return
 				end
+				l(Y, targetDest, 350)
 			else
 				if Settings["Auto Repair Ur Ship"] then
 					if t.PlayerGui.Main.BottomHUDList.ShipHealthBar.Visible then
@@ -10391,18 +10775,18 @@ function BuyBoatAndTeleBoat(P)
 					end
 				end
 				if not P then
-					if not t.Character.Humanoid.Sit then
-						toTarget(Y.VehicleSeat.CFrame)
+					if not EnsureSeated(Y.VehicleSeat) then
+						return
 					end
-					local P = CFrame.new(H.Position.X, Y.WorldPivot.Y, H.Position.Z)
+					local destCF = CFrame.new(H.Position.X, cruiseY, H.Position.Z)
 					if DetectSeaEvents(true) then
-						local H = tick()
+						local startT = tick()
 						repeat
 							task.wait()
-							toTarget(P * CFrame.new(0, 2500, 0))
-						until tick() - H >= 12
+							toTarget(destCF * CFrame.new(0, 2500, 0))
+						until tick() - startT >= 12
 					elseif t.Character.Humanoid.Sit then
-						l(Y, P, 350)
+						l(Y, destCF, 350)
 					end
 				end
 			end
@@ -10434,7 +10818,8 @@ function WarnOnce(b, l)
 end
 function DetectSeaEvents(b)
 	local l = SafeMultiSelect("Select Sea Events")
-	if b or l.SeaBeast then
+	local isTweenAll = Settings["Tween Until Have Sea Event"]
+	if b or isTweenAll or l.SeaBeast then
 		local P, Y, H = next, game:GetService("Workspace").SeaBeasts:GetChildren()
 		for C, C in P, Y, H do
 			if C.Name == "SeaBeast1" and (C:FindFirstChild("HumanoidRootPart")) and (C:FindFirstChild("HealthBBG")) then
@@ -10456,13 +10841,13 @@ function DetectSeaEvents(b)
 			end
 		end
 	end
-	if b or l.Terrorshark then
+	if b or isTweenAll or l.Terrorshark then
 		local P = CheckNameBoss("Terrorshark")
 		if P and t:DistanceFromCharacter(P.HumanoidRootPart.Position) < 2000 then
 			return P
 		end
 	end
-	if b or l.Ship then
+	if b or isTweenAll or l.Ship then
 		local P, Y, H = next, game:GetService("Workspace").Enemies:GetChildren()
 		for C, C in P, Y, H do
 			if
@@ -10472,7 +10857,7 @@ function DetectSeaEvents(b)
 				and t:DistanceFromCharacter(C.Engine.Position) < 2000
 			then
 				if l["Only Farm Ship Brigade"] then
-					if table.find(X, C.Name) then
+					if table.find({ "PirateBrigade", "PirateGrandBrigade" }, C.Name) then
 						return C
 					end
 				else
@@ -10481,13 +10866,13 @@ function DetectSeaEvents(b)
 			end
 		end
 	end
-	if b or l.Shark then
-		local X = DetectMob(_)
+	if b or isTweenAll or l.Shark then
+		local X = DetectMob({ "Shark", "Fish Crew Member" })
 		if X and t:DistanceFromCharacter(X.HumanoidRootPart.Position) < 2000 then
 			return X
 		end
 	end
-	if b or l.Piranha then
+	if b or isTweenAll or l.Piranha then
 		local b = DetectMob("Piranha")
 		if b and t:DistanceFromCharacter(b.HumanoidRootPart.Position) < 2000 then
 			return b
@@ -10600,7 +10985,7 @@ function AutoSeabeast()
 			break
 		end
 	end
-	if not b then
+	if not b and not Settings["Tween Until Have Sea Event"] then
 		WarnOnce("NoSeaEvent", "Chua chon su kien nao o Sea Event > Select Sea Events.")
 		return
 	end
@@ -10612,12 +10997,22 @@ function AutoSeabeast()
 		BuyBoatAndTeleBoat()
 	else
 		y()
+		pcall(function()
+			if t.Character and t.Character:FindFirstChildOfClass("Humanoid") then
+				t.Character.Humanoid.Sit = false
+			end
+		end)
 		if b.Name == "Terrorshark" then
 			getgenv().PathTerrorshark = b
 		end
 		getgenv().PathSpinBoat = b
 		repeat
 			task.wait()
+			pcall(function()
+				if t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Sit then
+					t.Character.Humanoid.Sit = false
+				end
+			end)
 			TeleportSeaEvents(b)
 			if b:FindFirstChildWhichIsA("Humanoid") then
 				if Settings["Use Dragonstorm For Sea Event"] then
@@ -10711,9 +11106,10 @@ function AutoSeabeast()
 			end
 		until not b
 			or not b.Parent
-			or not Settings["Auto Sea Event"]
+			or not (Settings["Auto Sea Event"] or Settings["Tween Until Have Sea Event"])
 			or b:FindFirstChild("Health") and b.Health.Value == 0
 			or b:FindFirstChildWhichIsA("Humanoid") and b.Humanoid.Health == 0
+			or (t.Character and t.Character:FindFirstChildOfClass("Humanoid") and t.Character.Humanoid.Health <= 0)
 			or not StackFarmOther
 	end
 end
@@ -10765,6 +11161,7 @@ FarmingSeaEventSection.CreateToggle(
 FarmingSeaEventSection.CreateToggle(
 	{ Title = "Auto Sea Event", Desc = nil, Default = Settings["Auto Sea Event"] or false },
 	function(_)
+		SaveSettings("Auto Sea Event", _)
 		if _ then
 			getgenv().StopBoatSeaEvent = true
 			spawn(function()
@@ -10777,11 +11174,10 @@ FarmingSeaEventSection.CreateToggle(
 					end
 				end
 			end)
-		elseif getgenv().StopBoatSeaEvent then
-			y()
+		elseif not Settings["Tween Until Have Sea Event"] and getgenv().StopBoatSeaEvent then
+			if type(y) == "function" then y() end
 			getgenv().StopBoatSeaEvent = false
 		end
-		SaveSettings("Auto Sea Event", _)
 	end
 )
 local _
@@ -10797,6 +11193,7 @@ end
 ToggleFindMirage = FarmingSeaEventSection.CreateToggle(
 	{ Title = "Auto Find Mirage", Desc = nil, Default = Settings["Auto Find Mirage"] or false },
 	function(y)
+		SaveSettings("Auto Find Mirage", y)
 		spawn(function()
 			while Settings["Auto Find Mirage"] and (wait(0.1)) do
 				pcall(function()
@@ -10879,7 +11276,6 @@ ToggleFindMirage = FarmingSeaEventSection.CreateToggle(
 				end)
 			end
 		end)
-		SaveSettings("Auto Find Mirage", y)
 	end
 )
 KitsuneEventSection = SeaEventTab.CreateSection("Kitsune Event")
@@ -10902,6 +11298,7 @@ KitsuneEventSection.CreateToggle(
 KitsuneEventSection.CreateToggle(
 	{ Title = "Auto Spawn Kitsune Island", Desc = nil, Default = Settings["Auto Spawn Kitsune Island"] or false },
 	function(y)
+		SaveSettings("Auto Spawn Kitsune Island", y)
 		if y then
 			A.CreateNoti({
 				Title = "Banana Cat Hub",
@@ -10909,7 +11306,6 @@ KitsuneEventSection.CreateToggle(
 				ShowTime = 5,
 			})
 		end
-		SaveSettings("Auto Spawn Kitsune Island", y)
 	end
 )
 KitsuneEventSection.CreateToggle(
@@ -11087,6 +11483,7 @@ end)
 LeviathanEventSection.CreateToggle(
 	{ Title = "Auto Buy Spy", Desc = nil, Default = Settings["Auto Buy Spy"] or false },
 	function(y)
+		SaveSettings("Auto Buy Spy", y)
 		if y then
 			spawn(function()
 				while Settings["Auto Buy Spy"] and (task.wait(5)) do
@@ -11099,7 +11496,6 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Buy Spy", y)
 	end
 )
 LeviathanEventSection.CreateToggle(
@@ -11510,6 +11906,7 @@ end
 LeviathanEventSection.CreateToggle(
 	{ Title = "Multi Find Leviathan", Desc = nil, Default = Settings["Multi Find Leviathan"] or false },
 	function(s)
+		SaveSettings("Multi Find Leviathan", s)
 		if s then
 			spawn(function()
 				while Settings["Multi Find Leviathan"] and (task.wait(0.1)) do
@@ -11531,12 +11928,12 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Multi Find Leviathan", s)
 	end
 )
 LeviathanEventSection.CreateToggle(
 	{ Title = "Auto Find Leviathan", Desc = nil, Default = Settings["Auto Find Leviathan"] or false },
 	function(s)
+		SaveSettings("Auto Find Leviathan", s)
 		if s then
 			spawn(function()
 				while Settings["Auto Find Leviathan"] and (task.wait()) do
@@ -11549,12 +11946,12 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Find Leviathan", s)
 	end
 )
 LeviathanEventSection.CreateToggle(
 	{ Title = "Auto Start Leviathan", Desc = nil, Default = Settings["Auto Start Leviathan"] or false },
 	function(s)
+		SaveSettings("Auto Start Leviathan", s)
 		if s then
 			spawn(function()
 				while Settings["Auto Start Leviathan"] and (task.wait(2.5)) do
@@ -11580,12 +11977,12 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Start Leviathan", s)
 	end
 )
 LeviathanEventSection.CreateToggle(
 	{ Title = "Auto Destroy IDK", Desc = nil, Default = Settings["Auto Destroy IDK"] or false },
 	function(s)
+		SaveSettings("Auto Destroy IDK", s)
 		if s then
 			spawn(function()
 				while Settings["Auto Destroy IDK"] and (task.wait(0.1)) do
@@ -11598,7 +11995,6 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Destroy IDK", s)
 	end
 )
 LeviathanEventSection.CreateToggle(
@@ -11850,6 +12246,7 @@ end
 LeviathanEventSection.CreateToggle(
 	{ Title = "Auto Attack Leviathan", Desc = nil, Default = Settings["Auto Attack Leviathan"] or false },
 	function(b)
+		SaveSettings("Auto Attack Leviathan", b)
 		if b then
 			spawn(function()
 				while Settings["Auto Attack Leviathan"] and (wait(0.1)) do
@@ -11862,7 +12259,6 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Attack Leviathan", b)
 	end
 )
 LeviathanEventSection.CreateToggle(
@@ -11966,6 +12362,7 @@ LeviathanEventSection.CreateToggle(
 		Default = Settings["Auto Fire Shoot Heart Leviathan"] or false,
 	},
 	function(b)
+		SaveSettings("Auto Fire Shoot Heart Leviathan", b)
 		if b then
 			spawn(function()
 				while Settings["Auto Fire Shoot Heart Leviathan"] and (task.wait(0.1)) do
@@ -11978,12 +12375,12 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Fire Shoot Heart Leviathan", b)
 	end
 )
 LeviathanEventSection.CreateToggle(
 	{ Title = "Teleport Frozen Dimension", Desc = nil, Default = Settings["Teleport Frozen Dimension"] or false },
 	function(b)
+		SaveSettings("Teleport Frozen Dimension", b)
 		if b then
 			spawn(function()
 				while Settings["Teleport Frozen Dimension"] and (wait()) do
@@ -11999,7 +12396,6 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Teleport Frozen Dimension", b)
 	end
 )
 LeviathanEventSection.CreateToggle(
@@ -12009,6 +12405,7 @@ LeviathanEventSection.CreateToggle(
 		Default = Settings["Tween Boat To Frozen Dimension"] or false,
 	},
 	function(b)
+		SaveSettings("Tween Boat To Frozen Dimension", b)
 		if b then
 			spawn(function()
 				while Settings["Tween Boat To Frozen Dimension"] and (wait()) do
@@ -12046,7 +12443,6 @@ LeviathanEventSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Tween Boat To Frozen Dimension", b)
 	end
 )
 LeviathanEventSection.CreateSlider(
@@ -12326,6 +12722,7 @@ local function X(I, _)
 	end)
 end
 BoatSettingSection.CreateToggle({ Title = "Fly Boat", Desc = nil, Default = Settings["Fly Boat"] or false }, function(s)
+	SaveSettings("Fly Boat", s)
 	if s then
 		spawn(function()
 			while Settings["Fly Boat"] and (wait(0.1)) do
@@ -12351,7 +12748,6 @@ BoatSettingSection.CreateToggle({ Title = "Fly Boat", Desc = nil, Default = Sett
 			end
 		end)
 	end
-	SaveSettings("Fly Boat", s)
 end)
 R = Settings["Value Speed Fly Boat"]
 BoatSettingSection.CreateSlider(
@@ -12407,6 +12803,7 @@ end
 BoatSettingSection.CreateToggle(
 	{ Title = "Change Speed Boat", Desc = nil, Default = Settings["Change Speed Boat"] or false },
 	function(b)
+		SaveSettings("Change Speed Boat", b)
 		if b then
 			spawn(function()
 				while Settings["Change Speed Boat"] and (task.wait(0.3)) do
@@ -12417,7 +12814,6 @@ BoatSettingSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Change Speed Boat", b)
 	end
 )
 RaceMain = Main.CreatePage({ Page_Name = "Upgrade Race", Page_Title = "Upgrade Race Tab" })
@@ -12628,10 +13024,10 @@ function AutoUpgradeRaceDraco()
 						wait(0.5)
 					end
 					getgenv().RoughSea = V
-					g = CFrame.new(-32975.9921875, X.WorldPivot.Y, 25963.7109375)
-						* CFrame.new(0, X.WorldPivot.Y, 0 + RoughSea)
+					g = CFrame.new(-32975.9921875, 22, 25963.7109375 + RoughSea)
 					if not t.Character.Humanoid.Sit then
-						toTarget(X.VehicleSeat.CFrame)
+						toTarget(X.VehicleSeat.CFrame * CFrame.new(0, 1.5, 0))
+						pcall(function() X.VehicleSeat:Sit(t.Character.Humanoid) end)
 					else
 						manageTween(X.VehicleSeat, g, 350, "TweenBoat")
 					end
@@ -12660,6 +13056,7 @@ end
 RaceDracoSection.CreateToggle(
 	{ Title = "Auto Upgrade Race V2-V3 Draco", Desc = nil, Default = Settings["Auto Upgrade Race V2-V3 Draco"] or false },
 	function(b)
+		SaveSettings("Auto Upgrade Race V2-V3 Draco", b)
 		if b then
 			spawn(function()
 				while Settings["Auto Upgrade Race V2-V3 Draco"] and (task.wait()) do
@@ -12672,7 +13069,6 @@ RaceDracoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Upgrade Race V2-V3 Draco", b)
 	end
 )
 function CheckRelicChuaDat(b)
@@ -12744,6 +13140,7 @@ getgenv().StatusGearDraco = RaceDracoSection.CreateLabel({ Title = "Acient One D
 ToggleAutoTrialDraco = RaceDracoSection.CreateToggle(
 	{ Title = "Auto Trial Draco", Desc = nil, Default = Settings["Auto Trial Draco"] or false },
 	function(b)
+		SaveSettings("Auto Trial Draco", b)
 		if b then
 			spawn(function()
 				while Settings["Auto Trial Draco"] and (task.wait(0.1)) do
@@ -12820,7 +13217,6 @@ ToggleAutoTrialDraco = RaceDracoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Trial Draco", b)
 	end
 )
 function DetectRockVolcano()
@@ -13513,6 +13909,7 @@ RaceDracoSection.CreateToggle(
 		Default = Settings["Fully Trial Draco"] or false,
 	},
 	function(g)
+		SaveSettings("Fully Trial Draco", g)
 		if g then
 			spawn(function()
 				while Settings["Fully Trial Draco"] and (task.wait(0.1)) do
@@ -13525,7 +13922,6 @@ RaceDracoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Fully Trial Draco", g)
 	end
 )
 RaceDracoSection.CreateToggle(
@@ -13541,6 +13937,7 @@ RaceDracoSection.CreateToggle(
 RaceDracoSection.CreateToggle(
 	{ Title = "Auto Buy Gear Draco", Desc = nil, Default = Settings["Auto Buy Gear Draco"] or false },
 	function(g)
+		SaveSettings("Auto Buy Gear Draco", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Buy Gear Draco"] and (wait(0.3)) do
@@ -13550,12 +13947,12 @@ RaceDracoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Buy Gear Draco", g)
 	end
 )
 RaceDracoSection.CreateToggle(
 	{ Title = "Auto Finish Train Draco Quest", Desc = nil, Default = Settings["Auto Finish Train Draco Quest"] or false },
 	function(g)
+		SaveSettings("Auto Finish Train Draco Quest", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Finish Train Draco Quest"] and (wait(0.1)) do
@@ -13613,7 +14010,6 @@ RaceDracoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Finish Train Draco Quest", g)
 	end
 )
 RaceNormalSection = RaceMain.CreateSection("Race Normal")
@@ -13998,6 +14394,7 @@ end
 RaceNormalSection.CreateToggle(
 	{ Title = "Auto Upgrade Race V2-V3", Desc = nil, Default = Settings["Auto Upgrade Race V2-V3"] or false },
 	function(g)
+		SaveSettings("Auto Upgrade Race V2-V3", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Upgrade Race V2-V3"] and (wait(0.1)) do
@@ -14010,7 +14407,6 @@ RaceNormalSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Upgrade Race V2-V3", g)
 	end
 )
 function BuyChipLaw()
@@ -14186,6 +14582,7 @@ end
 RaceNormalSection.CreateToggle(
 	{ Title = "Auto Get Cyborg", Desc = nil, Default = Settings["Auto Get Cyborg"] or false },
 	function(g)
+		SaveSettings("Auto Get Cyborg", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Get Cyborg"] and (wait(0.1)) do
@@ -14198,7 +14595,6 @@ RaceNormalSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Get Cyborg", g)
 	end
 )
 function GetRaceGhoul()
@@ -14335,6 +14731,7 @@ RaceNormalSection.CreateToggle(
 RaceNormalSection.CreateToggle(
 	{ Title = "Auto Get Ghoul", Desc = nil, Default = Settings["Auto Get Ghoul"] or false },
 	function(g)
+		SaveSettings("Auto Get Ghoul", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Get Ghoul"] and (wait(0.1)) do
@@ -14347,11 +14744,11 @@ RaceNormalSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Get Ghoul", g)
 	end
 )
 RaceV4Section = RaceMain.CreateSection("Race V4")
 RaceV4Section.CreateToggle({ Title = "No Frog", Desc = nil, Default = Settings["No Frog"] or false }, function(g)
+	SaveSettings("No Frog", g)
 	if g then
 		local R = game.Lighting
 		R.FogEnd = 100000
@@ -14361,11 +14758,11 @@ RaceV4Section.CreateToggle({ Title = "No Frog", Desc = nil, Default = Settings["
 			end
 		end
 	end
-	SaveSettings("No Frog", g)
 end)
 RaceV4Section.CreateToggle(
 	{ Title = "Teleport Acient Clock", Desc = nil, Default = Settings["Teleport Acient Clock"] or false },
 	function(g)
+		SaveSettings("Teleport Acient Clock", g)
 		if g then
 			spawn(function()
 				while Settings["Teleport Acient Clock"] and (wait()) do
@@ -14376,7 +14773,6 @@ RaceV4Section.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Teleport Acient Clock", g)
 	end
 )
 function BuyGearV4()
@@ -14564,6 +14960,7 @@ end
 RaceV4Section.CreateToggle(
 	{ Title = "Auto Buy Gear", Desc = nil, Default = Settings["Auto Buy Gear"] or false },
 	function(g)
+		SaveSettings("Auto Buy Gear", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Buy Gear"] and (wait(0.2)) do
@@ -14573,7 +14970,6 @@ RaceV4Section.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Buy Gear", g)
 	end
 )
 RaceV4Section.CreateDropdown(
@@ -14591,6 +14987,7 @@ RaceV4Section.CreateDropdown(
 getgenv().ToggleAutoChooseGears = RaceV4Section.CreateToggle(
 	{ Title = "Auto Choose Gears", Desc = nil, Default = Settings["Auto Choose Gears"] or false },
 	function(g)
+		SaveSettings("Auto Choose Gears", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Choose Gears"] and (wait(0.3)) do
@@ -14603,12 +15000,12 @@ getgenv().ToggleAutoChooseGears = RaceV4Section.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Choose Gears", g)
 	end
 )
 RaceV4Section.CreateToggle(
 	{ Title = "Auto Finish Train Quest", Desc = nil, Default = Settings["Auto Finish Train Quest"] or false },
 	function(g)
+		SaveSettings("Auto Finish Train Quest", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Finish Train Quest"] and (task.wait()) do
@@ -14672,7 +15069,6 @@ RaceV4Section.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Finish Train Quest", g)
 	end
 )
 RaceV4Section.CreateToggle(
@@ -14694,6 +15090,7 @@ getgenv().TurnOffHOPSVPullAndTrial = RaceV4Section.CreateToggle(
 RaceV4Section.CreateToggle(
 	{ Title = "Auto Pull Lever", Desc = nil, Default = Settings["Auto Pull Lever"] or false },
 	function(g)
+		SaveSettings("Auto Pull Lever", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Pull Lever"] and (wait(0.1)) do
@@ -14703,7 +15100,6 @@ RaceV4Section.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Pull Lever", g)
 	end
 )
 function DetectNameMulti(g)
@@ -15354,14 +15750,14 @@ function DetectQuestRainBowHaki(R)
 		for R, R in next, g, nil do
 			if
 				DontQuest()
-				and (string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, R))
+				and (string.find(GetCurrentQuestTitle(), R))
 			then
 				return false
 			end
 		end
 		for R, R in next, g, nil do
 			if
-				not string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, R)
+				not string.find(GetCurrentQuestTitle(), R)
 				or not DontQuest()
 			then
 				return true
@@ -15369,7 +15765,7 @@ function DetectQuestRainBowHaki(R)
 		end
 	else
 		for R, R in next, g, nil do
-			if string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, R) then
+			if string.find(GetCurrentQuestTitle(), R) then
 				return R
 			end
 		end
@@ -15414,6 +15810,7 @@ end
 GetItemsSection.CreateToggle(
 	{ Title = "Auto Get Rainbow Haki", Desc = nil, Default = Settings["Auto Get Rainbow Haki"] or false },
 	function(g)
+		SaveSettings("Auto Get Rainbow Haki", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Get Rainbow Haki"] and (task.wait(0.1)) do
@@ -15426,7 +15823,6 @@ GetItemsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Get Rainbow Haki", g)
 	end
 )
 function CountZombie(g)
@@ -15769,6 +16165,7 @@ end
 GetItemsSection.CreateToggle(
 	{ Title = "Auto Soul Guitar", Desc = nil, Default = Settings["Auto Soul Guitar"] or false },
 	function(g)
+		SaveSettings("Auto Soul Guitar", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Soul Guitar"] and (task.wait(0.1)) do
@@ -15781,7 +16178,6 @@ GetItemsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Soul Guitar", g)
 	end
 )
 StartGood = true
@@ -16273,6 +16669,7 @@ GetItemsSection.CreateDropdown(
 	end
 )
 GetItemsSection.CreateToggle({ Title = "Auto CDK", Desc = nil, Default = Settings["Auto CDK"] or false }, function(g)
+	SaveSettings("Auto CDK", g)
 	if g then
 		spawn(function()
 			while Settings["Auto CDK"] and (task.wait(0.1)) do
@@ -16285,15 +16682,11 @@ GetItemsSection.CreateToggle({ Title = "Auto CDK", Desc = nil, Default = Setting
 			end
 		end)
 	end
-	SaveSettings("Auto CDK", g)
 end)
 function GetYama()
 	if game.ReplicatedStorage.Remotes.CommF_:InvokeServer("EliteHunter", "Progress") < 30 then
 		local g = DetectEliteHunter()
-		if
-			not string.find(game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, g.Name)
-			or not DontQuest()
-		then
+		if not HasCurrentQuestTarget(g.Name) then
 			game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest")
 			game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("EliteHunter")
 		else
@@ -16344,6 +16737,7 @@ function GetYama()
 	end
 end
 GetItemsSection.CreateToggle({ Title = "Auto Yama", Desc = nil, Default = Settings["Auto Yama"] or false }, function(g)
+	SaveSettings("Auto Yama", g)
 	if g then
 		spawn(function()
 			while Settings["Auto Yama"] and (task.wait(0.1)) do
@@ -16356,7 +16750,6 @@ GetItemsSection.CreateToggle({ Title = "Auto Yama", Desc = nil, Default = Settin
 			end
 		end)
 	end
-	SaveSettings("Auto Yama", g)
 end)
 function checkTorch()
 	local g, R, m, l =
@@ -16441,6 +16834,7 @@ end
 GetItemsSection.CreateToggle(
 	{ Title = "Auto Tushita", Desc = nil, Default = Settings["Auto Tushita"] or false },
 	function(g)
+		SaveSettings("Auto Tushita", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Tushita"] and (task.wait()) do
@@ -16453,10 +16847,10 @@ GetItemsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Tushita", g)
 	end
 )
 GetItemsSection.CreateToggle({ Title = "Auto TTK", Desc = nil, Default = Settings["Auto TTK"] or false }, function(g)
+	SaveSettings("Auto TTK", g)
 	if g then
 		spawn(function()
 			while Settings["Auto TTK"] and (task.wait(0.1)) do
@@ -16527,7 +16921,6 @@ GetItemsSection.CreateToggle({ Title = "Auto TTK", Desc = nil, Default = Setting
 			end
 		end)
 	end
-	SaveSettings("Auto TTK", g)
 end)
 function doorcup()
 	local g, R, m = next, game:GetService("Workspace").Map.Desert.Burn:GetChildren()
@@ -16815,6 +17208,7 @@ end
 GetItemsSection.CreateToggle(
 	{ Title = "Auto Saber", Desc = nil, Default = Settings["Auto Saber"] or false },
 	function(g)
+		SaveSettings("Auto Saber", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Saber"] and (task.wait(0.1)) do
@@ -16824,7 +17218,6 @@ GetItemsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Saber", g)
 	end
 )
 function autoCraftSharkAnchor()
@@ -16869,6 +17262,7 @@ end
 GetItemsSection.CreateToggle(
 	{ Title = "Auto Craft Item Shark Anchor", Desc = nil, Default = Settings["Auto Craft Item Shark Anchor"] or false },
 	function(g)
+		SaveSettings("Auto Craft Item Shark Anchor", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Craft Item Shark Anchor"] and (wait(0.1)) do
@@ -16878,7 +17272,6 @@ GetItemsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Craft Item Shark Anchor", g)
 	end
 )
 function AutoYorumini()
@@ -16904,12 +17297,7 @@ function AutoYorumini()
 		if elitehunter then
 			local g = elitehunter
 			if g then
-				if
-					not string.find(
-						game.Players.LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text,
-						g.Name
-					) or not DontQuest()
-				then
+				if not HasCurrentQuestTarget(g.Name) then
 					game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest")
 					game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("EliteHunter")
 				else
@@ -16994,6 +17382,7 @@ GetItemsSection.CreateToggle(
 		Default = Settings["Auto Yoru Mini"] or false,
 	},
 	function(g)
+		SaveSettings("Auto Yoru Mini", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Yoru Mini"] and (wait(0.1)) do
@@ -17003,7 +17392,6 @@ GetItemsSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Yoru Mini", g)
 	end
 )
 GetItemsSection.CreateToggle(
@@ -17055,6 +17443,7 @@ end
 MasteryWeaponSection.CreateToggle(
 	{ Title = "Auto Farm Mastery 600 Melees", Desc = nil, Default = Settings["Auto Farm Mastery 600 Melees"] or false },
 	function(g)
+		SaveSettings("Auto Farm Mastery 600 Melees", g)
 		if g then
 			Q = true
 			o:SetStage(true)
@@ -17097,7 +17486,6 @@ MasteryWeaponSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Farm Mastery 600 Melees", g)
 	end
 )
 function DetectSwordUnlock()
@@ -17119,6 +17507,7 @@ MasteryWeaponSection.CreateToggle(
 		Default = Settings["Auto Farm Mastery 600 Sword In Inventory"] or false,
 	},
 	function(g)
+		SaveSettings("Auto Farm Mastery 600 Sword In Inventory", g)
 		if g then
 			Q = true
 			o:SetStage(true)
@@ -17139,7 +17528,6 @@ MasteryWeaponSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Farm Mastery 600 Sword In Inventory", g)
 	end
 )
 UpgradeWeaponSection = GetItemsMain.CreateSection("Upgrade Weapon")
@@ -17353,6 +17741,7 @@ end
 UpgradeWeaponSection.CreateToggle(
 	{ Title = "Auto Upgrade Sword Inventory", Desc = nil, Default = Settings["Auto Upgrade Sword Inventory"] or false },
 	function(g)
+		SaveSettings("Auto Upgrade Sword Inventory", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Upgrade Sword Inventory"] and (task.wait(0.1)) do
@@ -17365,12 +17754,12 @@ UpgradeWeaponSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Upgrade Sword Inventory", g)
 	end
 )
 UpgradeWeaponSection.CreateToggle(
 	{ Title = "Auto Upgrade Gun Inventory", Desc = nil, Default = Settings["Auto Upgrade Gun Inventory"] or false },
 	function(g)
+		SaveSettings("Auto Upgrade Gun Inventory", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Upgrade Gun Inventory"] and (task.wait(0.1)) do
@@ -17383,7 +17772,6 @@ UpgradeWeaponSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Upgrade Gun Inventory", g)
 	end
 )
 VolcanoTab = Main.CreatePage({ Page_Name = "Volcano Event", Page_Title = "Volcano Event Tab" })
@@ -17608,6 +17996,7 @@ end
 ToggleAutoCraftingVolcanicMagnet = FarmingVolcanoSection.CreateToggle(
 	{ Title = "Auto Crafting Volcanic Magnet", Desc = nil, Default = Settings["Auto Crafting Volcanic Magnet"] or false },
 	function(g)
+		SaveSettings("Auto Crafting Volcanic Magnet", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Crafting Volcanic Magnet"] and (wait(0.1)) do
@@ -17617,7 +18006,6 @@ ToggleAutoCraftingVolcanicMagnet = FarmingVolcanoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Crafting Volcanic Magnet", g)
 	end
 )
 function AutoFindPrehistoric()
@@ -17704,6 +18092,7 @@ end
 ToggleAutoFindPrehistoricIsland = FarmingVolcanoSection.CreateToggle(
 	{ Title = "Auto Find Prehistoric Island", Desc = nil, Default = Settings["Auto Find Prehistoric Island"] or false },
 	function(g)
+		SaveSettings("Auto Find Prehistoric Island", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Find Prehistoric Island"] and (wait(0.1)) do
@@ -17713,7 +18102,6 @@ ToggleAutoFindPrehistoricIsland = FarmingVolcanoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Find Prehistoric Island", g)
 	end
 )
 function AutoAttackVolcano()
@@ -17865,6 +18253,7 @@ FarmingVolcanoSection.CreateToggle(
 		Default = Settings["Auto Event Prehistoric Island"] or false,
 	},
 	function(g)
+		SaveSettings("Auto Event Prehistoric Island", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Event Prehistoric Island"] and (wait(0.1)) do
@@ -17877,7 +18266,6 @@ FarmingVolcanoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Event Prehistoric Island", g)
 	end
 )
 function DetectBone()
@@ -17890,6 +18278,7 @@ end
 FarmingVolcanoSection.CreateToggle(
 	{ Title = "Auto Collect Bone", Desc = nil, Default = Settings["Auto Collect Bone"] or false },
 	function(g)
+		SaveSettings("Auto Collect Bone", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Collect Bone"] and (wait()) do
@@ -17906,7 +18295,6 @@ FarmingVolcanoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Collect Bone", g)
 	end
 )
 function DetectDragonEggs()
@@ -17925,6 +18313,7 @@ end
 FarmingVolcanoSection.CreateToggle(
 	{ Title = "Auto Collect Egg", Desc = nil, Default = Settings["Auto Collect Egg"] or false },
 	function(g)
+		SaveSettings("Auto Collect Egg", g)
 		if g then
 			spawn(function()
 				while Settings["Auto Collect Egg"] and (wait()) do
@@ -17943,7 +18332,6 @@ FarmingVolcanoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Collect Egg", g)
 	end
 )
 function FullyEventVolcano()
@@ -18391,6 +18779,7 @@ FullyVolcanoSection.CreateToggle(
 		Default = Settings["Fully Event Prehistoric Island"] or false,
 	},
 	function(b)
+		SaveSettings("Fully Event Prehistoric Island", b)
 		if b then
 			spawn(function()
 				while Settings["Fully Event Prehistoric Island"] and (task.wait()) do
@@ -18403,7 +18792,6 @@ FullyVolcanoSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Fully Event Prehistoric Island", b)
 	end
 )
 ESPTab = Main.CreatePage({ Page_Name = "ESP", Page_Title = "ESP Tab" })
@@ -18443,6 +18831,7 @@ function EspSpawnBerry()
 	end
 end
 ESPSection.CreateToggle({ Title = "ESP Berry", Desc = nil, Default = Settings["ESP Berry"] or false }, function(b)
+	SaveSettings("ESP Berry", b)
 	if b then
 		spawn(function()
 			while Settings["ESP Berry"] and (wait(0.2)) do
@@ -18452,7 +18841,6 @@ ESPSection.CreateToggle({ Title = "ESP Berry", Desc = nil, Default = Settings["E
 			end
 		end)
 	end
-	SaveSettings("ESP Berry", b)
 end)
 function DetectIsland()
 	local b, s, X = next, workspace._WorldOrigin.Locations:GetChildren()
@@ -18500,6 +18888,7 @@ function EspIsland()
 	end
 end
 ESPSection.CreateToggle({ Title = "ESP Island", Desc = nil, Default = Settings["ESP Island"] or false }, function(b)
+	SaveSettings("ESP Island", b)
 	if b then
 		spawn(function()
 			while Settings["ESP Island"] and (wait(0.2)) do
@@ -18509,7 +18898,6 @@ ESPSection.CreateToggle({ Title = "ESP Island", Desc = nil, Default = Settings["
 			end
 		end)
 	end
-	SaveSettings("ESP Island", b)
 end)
 function GetEspFruit()
 	local b, s, X = next, game.Workspace:GetChildren()
@@ -18659,6 +19047,7 @@ function EspFruit()
 	end)
 end
 ESPSection.CreateToggle({ Title = "ESP Fruit", Desc = nil, Default = Settings["ESP Fruit"] or false }, function(b)
+	SaveSettings("ESP Fruit", b)
 	if b then
 		spawn(function()
 			while Settings["ESP Fruit"] and (wait()) do
@@ -18671,7 +19060,6 @@ ESPSection.CreateToggle({ Title = "ESP Fruit", Desc = nil, Default = Settings["E
 			end
 		end)
 	end
-	SaveSettings("ESP Fruit", b)
 end)
 function DetectPlayerESP()
 	for b, b in pairs(game.Workspace.Characters:GetChildren()) do
@@ -18722,6 +19110,7 @@ function ESPPlayer()
 	end
 end
 ESPSection.CreateToggle({ Title = "ESP Player", Desc = nil, Default = Settings["ESP Player"] or false }, function(b)
+	SaveSettings("ESP Player", b)
 	if b then
 		spawn(function()
 			while Settings["ESP Player"] and (wait()) do
@@ -18731,7 +19120,6 @@ ESPSection.CreateToggle({ Title = "ESP Player", Desc = nil, Default = Settings["
 			end
 		end)
 	end
-	SaveSettings("ESP Player", b)
 end)
 PvpTab = Main.CreatePage({ Page_Name = "PVP", Page_Title = "PVP Tab" })
 SettingsAimbotSection = PvpTab.CreateSection("PVP")
@@ -18772,6 +19160,7 @@ end
 SettingsAimbotSection.CreateToggle(
 	{ Title = "Teleport Player", Desc = nil, Default = Settings["Teleport Player"] or false },
 	function(b)
+		SaveSettings("Teleport Player", b)
 		if b then
 			spawn(function()
 				while Settings["Teleport Player"] and (wait()) do
@@ -18781,7 +19170,6 @@ SettingsAimbotSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Teleport Player", b)
 	end
 )
 function ClosestPartaimbot()
@@ -18808,6 +19196,7 @@ end
 SettingsAimbotSection.CreateToggle(
 	{ Title = "Auto Aimbot", Desc = nil, Default = Settings["Auto Aimbot"] or false },
 	function(b)
+		SaveSettings("Auto Aimbot", b)
 		if b then
 			spawn(function()
 				while Settings["Auto Aimbot"] and (task.wait()) do
@@ -18834,7 +19223,6 @@ SettingsAimbotSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Auto Aimbot", b)
 	end
 )
 SettingsAimbotSection.CreateToggle(
@@ -18883,6 +19271,7 @@ MISCPVPSection.CreateToggle(
 MISCPVPSection.CreateToggle(
 	{ Title = "Walk On Water", Desc = nil, Default = Settings["Walk On Water "] or true },
 	function(b)
+		SaveSettings("Walk On Water ", b)
 		if b then
 			if not game.Workspace:FindFirstChild("WaterWalk") then
 				platform = Instance.new("Part")
@@ -18919,7 +19308,6 @@ MISCPVPSection.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Walk On Water ", b)
 	end
 )
 TabWebhook = Main.CreatePage({ Page_Name = "Tab Webhook", Page_Title = "Tab Webhook" })
@@ -19263,6 +19651,7 @@ end
 SectionWebhook.CreateToggle(
 	{ Title = "Noti Profile", Desc = nil, Default = Settings["Noti Profile"] or false },
 	function(b)
+		SaveSettings("Noti Profile", b)
 		if b then
 			spawn(function()
 				while Settings["Noti Profile"] and (wait()) do
@@ -19273,7 +19662,6 @@ SectionWebhook.CreateToggle(
 				end
 			end)
 		end
-		SaveSettings("Noti Profile", b)
 	end
 )
 TableRarityFruit = { Mythical = false, Legendary = false, Rare = false, Uncommon = false, Common = false }
@@ -19334,6 +19722,7 @@ a.CreateToggle({ Title = "White Screen", Desc = nil, Default = Settings["White S
 	SaveSettings("White Screen", b)
 end)
 a.CreateToggle({ Title = "Black Screen", Desc = nil, Default = Settings["Black Screen"] or false }, function(b)
+	SaveSettings("Black Screen", b)
 	spawn(function()
 		repeat
 			wait()
@@ -19348,7 +19737,6 @@ a.CreateToggle({ Title = "Black Screen", Desc = nil, Default = Settings["Black S
 			SetRobloxGUI(false)
 		end
 	end)
-	SaveSettings("Black Screen", b)
 end)
 local function b(s)
 	if type(s) ~= "table" then
@@ -19447,127 +19835,114 @@ a.CreateToggle(
 a.CreateToggle({ Title = "Auto Load Script", Desc = nil, Default = Settings["Auto Load Script"] or false }, function(T)
 	SaveSettings("Auto Load Script", T)
 end)
-a.CreateToggle({ Title = "Boost Fps", Desc = nil, Default = Settings["Boost Fps"] or false }, function(T)
-	if T then
-		local s, X = true, game
-		local g, f = X.Workspace, X.Lighting
-		local K = g.Terrain
-		K.WaterWaveSize = 0
-		K.WaterWaveSpeed = 0
-		K.WaterReflectance = 0
-		K.WaterTransparency = 0
-		f.GlobalShadows = false
-		f.FogEnd = 9000000000
-		f.Brightness = 0
-		settings().Rendering.QualityLevel = "Level01"
-		for R, R in pairs(X:GetDescendants()) do
-			if R:IsA("Part") or (R:IsA("Union")) or (R:IsA("CornerWedgePart")) or (R:IsA("TrussPart")) then
-				R.Material = "Plastic"
-				R.Reflectance = 0
-			elseif R:IsA("Decal") or R:IsA("Texture") and s then
-				R.Transparency = 1
-			elseif R:IsA("ParticleEmitter") or R:IsA("Trail") and R.Parent.Name ~= "RelicFire" then
-				R.Lifetime = NumberRange.new(0)
-			elseif R:IsA("Explosion") then
-				R.BlastPressure = 1
-				R.BlastRadius = 1
-			elseif R:IsA("Fire") or (R:IsA("SpotLight")) or (R:IsA("Smoke")) or (R:IsA("Sparkles")) then
-				R.Enabled = false
-			elseif R:IsA("MeshPart") then
-				R.Material = "Plastic"
-				R.Reflectance = 0
-				R.TextureID = 10385902758728956
-			end
-		end
-		for R, R in pairs(f:GetChildren()) do
-			if
-				R:IsA("BlurEffect")
-				or (R:IsA("SunRaysEffect"))
-				or (R:IsA("ColorCorrectionEffect"))
-				or (R:IsA("BloomEffect"))
-				or (R:IsA("DepthOfFieldEffect"))
-			then
-				R.Enabled = false
-			end
-		end
-		wait(1)
-		s, g, X =
-			workspace:WaitForChild("Map"), game.ReplicatedStorage:WaitForChild("Unloaded"), Enum.Material.SmoothPlastic
-		f = s:GetDescendants()
-		wait(0.5)
-		K = g:GetDescendants()
-		wait(0.5)
-		local R, m, E = os.clock, task.wait, g.IsA
-		local l, Q, S = R(), tick(), 0
-		s = l
-		for d, d in next, f, nil do
-			if E(d, "BasePart") then
-				d.Material = X
-				S += 1
-				if R() - l > 0.008333333333333333 then
-					g = "Working.. " .. S
-					m()
-					m()
-					l = (R())
-				end
-			elseif d:IsA("Texture") and not d:GetAttribute("Offset") then
-				d:Destroy()
-			end
-		end
-		for g, f in next, K, nil do
-			if E(f, "BasePart") then
-				f.Material = X
-				S += 1
-				if R() - l > 0.008333333333333333 then
-					g = "Working.. " .. S
-					m()
-					m()
-					l = (R())
-				end
-			elseif f:IsA("Texture") and not f:GetAttribute("Offset") then
-				f:Destroy()
-			end
-		end
-		game.Players.LocalPlayer.PlayerScripts.OptimizerClientActor:SendMessage("Optimize", true)
-		print("Time taken to Fast Mode: ", tick() - Q, R() - s)
+local FpsBoostConnection = nil
+
+local function OptimizeInstance(inst)
+	if not inst then return end
+	local className = inst.ClassName
+	if className == "ParticleEmitter" or className == "Trail" or className == "Smoke" or className == "Fire" or className == "Sparkles" or className == "Beam" then
+		pcall(function()
+			inst.Enabled = false
+			inst:Destroy()
+		end)
+	elseif className == "PointLight" or className == "SpotLight" or className == "SurfaceLight" then
+		pcall(function()
+			inst.Enabled = false
+			inst:Destroy()
+		end)
+	elseif className == "Decal" or className == "Texture" then
+		pcall(function()
+			inst:Destroy()
+		end)
+	elseif className == "BlurEffect" or className == "SunRaysEffect" or className == "ColorCorrectionEffect" or className == "BloomEffect" or className == "DepthOfFieldEffect" or className == "Atmosphere" then
+		pcall(function()
+			inst.Enabled = false
+			inst:Destroy()
+		end)
+	elseif className == "Explosion" then
+		pcall(function()
+			inst.Visible = false
+		end)
+	elseif inst:IsA("BasePart") then
+		pcall(function()
+			inst.Material = Enum.Material.SmoothPlastic
+			inst.Reflectance = 0
+			inst.CastShadow = false
+		end)
 	end
-	SaveSettings("Boost Fps", T)
-end)
-spawn(function()
-	repeat
-		wait()
-	until Settings["Boost Fps"] and (game.Workspace:FindFirstChild("_WorldOrigin"))
-	workspace._WorldOrigin.DescendantAdded:Connect(function(T)
-		if T:IsA("Part") or (T:IsA("Union")) or (T:IsA("CornerWedgePart")) or (T:IsA("TrussPart")) then
-			T.Transparency = 1
-			T.Material = "Plastic"
-			T.Reflectance = 0
-		end
-		if T:IsA("Decal") or T:IsA("Texture") and decalsyeeted then
-			T.Transparency = 1
-		end
-		if T:IsA("ParticleEmitter") or (T:IsA("Trail")) then
-			if T.Parent.Name ~= "RelicFire" then
-				T.Enabled = false
-				T.Lifetime = NumberRange.new(0)
+end
+
+local function ApplyFpsBoost(enable)
+	if enable then
+		pcall(function()
+			local terrain = workspace:FindFirstChildOfClass("Terrain") or workspace.Terrain
+			if terrain then
+				terrain.WaterWaveSize = 0
+				terrain.WaterWaveSpeed = 0
+				terrain.WaterReflectance = 0
+				terrain.WaterTransparency = 0
+				terrain.Decoration = false
 			end
+			local lighting = game:GetService("Lighting")
+			lighting.GlobalShadows = false
+			lighting.FogEnd = 9e9
+			lighting.Brightness = 1
+			for _, effect in ipairs(lighting:GetChildren()) do
+				if effect:IsA("PostProcessEffect") or effect:IsA("Atmosphere") or effect:IsA("Sky") then
+					if effect.Name == "LightingLayers" or effect.Name == "SeaTerrorCC" or effect.Name == "FantasySky" or effect.Name == "BaseAtmosphere" or effect:IsA("PostProcessEffect") then
+						pcall(function() effect:Destroy() end)
+					end
+				end
+			end
+			settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+		end)
+
+		-- Asynchronously scan workspace in non-blocking batches so game never freezes
+		task.spawn(function()
+			local descendants = workspace:GetDescendants()
+			local count = 0
+			for _, obj in ipairs(descendants) do
+				if not Settings["Boost Fps"] then break end
+				OptimizeInstance(obj)
+				count = count + 1
+				if count % 300 == 0 then
+					task.wait()
+				end
+			end
+		end)
+
+		-- Listen for new descendants to destroy particles, lights, and textures instantly
+		if not FpsBoostConnection then
+			FpsBoostConnection = workspace.DescendantAdded:Connect(function(obj)
+				if Settings["Boost Fps"] then
+					OptimizeInstance(obj)
+				end
+			end)
 		end
-		if T:IsA("Explosion") then
-			T.Enabled = false
-			T.BlastPressure = 1
-			T.BlastRadius = 1
+	else
+		if FpsBoostConnection then
+			FpsBoostConnection:Disconnect()
+			FpsBoostConnection = nil
 		end
-		if T:IsA("Fire") or (T:IsA("SpotLight")) or (T:IsA("Smoke")) or (T:IsA("Sparkles")) then
-			T.Enabled = false
-		end
-		if T:IsA("MeshPart") then
-			T.Transparency = 1
-			T.Material = "Plastic"
-			T.Reflectance = 0
-			T.TextureID = 10385902758728956
-		end
-	end)
+		pcall(function()
+			local lighting = game:GetService("Lighting")
+			lighting.GlobalShadows = true
+			lighting.FogEnd = 100000
+		end)
+	end
+end
+
+a.CreateToggle({ Title = "Boost Fps", Desc = "Disables and destroys laggy particles, dynamic lights, and textures to maximize FPS", Default = Settings["Boost Fps"] or false }, function(T)
+	SaveSettings("Boost Fps", T)
+	ApplyFpsBoost(T)
 end)
+
+-- Auto-apply if saved setting is true
+if Settings["Boost Fps"] then
+	task.defer(function()
+		ApplyFpsBoost(true)
+	end)
+end
 a.CreateButton({ Title = "Copy Config" }, function()
 	setclipboard(b((HttpService:JSONDecode(readfile(FolderName .. "/" .. SaveFileName)))))
 	A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Successfully Copy Config", ShowTime = 5 })
@@ -19665,16 +20040,17 @@ if not getgenv().BananaCatMainLoop then
 			lastFruitTick = tick()
 			local T, T = pcall(function()
 				if Settings["Random Devil Fruit"] then
-					if
-						not game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("SpinnerWindow")
-						or not game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("SpinnerWindow").Enabled
-					then
+					local spinnerWin = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("SpinnerWindow")
+					if not spinnerWin or not spinnerWin.Enabled then
 						RandomFruit()
-					elseif
-						game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("SpinnerWindow").Enabled
-						and game:GetService("Players").LocalPlayer.PlayerGui.SpinnerWindow.AboveSpinner.Navigation.CloseButton.Visible
-					then
-						Spinner:Close()
+					else
+						pcall(function()
+							if Spinner and Spinner.Close then
+								Spinner:Close()
+							else
+								spinnerWin.Enabled = false
+							end
+						end)
 					end
 				end
 				if Settings["Auto Trade Bone"] then
@@ -19684,8 +20060,12 @@ if not getgenv().BananaCatMainLoop then
 					BuyFruitShop()
 				end
 				if Settings["Auto Store Fruit"] then
-					StoreFruit(t.Backpack)
-					StoreFruit(t.Character)
+					if t and t:FindFirstChild("Backpack") then
+						StoreFruit(t.Backpack)
+					end
+					if t and t.Character then
+						StoreFruit(t.Character)
+					end
 				end
 				if Settings["Auto Awake Fruit"] then
 					L.Remotes.CommF_:InvokeServer("Awakener", "Check")
